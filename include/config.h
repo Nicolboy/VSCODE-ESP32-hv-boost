@@ -20,5 +20,7 @@
 // TMS320 emet reellement des trames $T,...*XX sur l'UART.
 #define TMS_DUMMY_MODE true
 
-// WiFi/serveur web de l'IHM : a definir une fois l'affichage OLED valide
-// (connexion STA au reseau local, SSID/mot de passe a fournir).
+// WiFi/serveur web de l'IHM : l'ESP32 cree son propre point d'acces
+// (mode AP), pas de dependance a un reseau local existant.
+#define WIFI_AP_SSID     "AlimHT"
+#define WIFI_AP_PASSWORD "REDACTED_WIFI_PASSWORD"

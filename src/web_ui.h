@@ -1,8 +1,7 @@
 #pragma once
 
-// Stub pour l'instant : la priorite est de valider l'affichage OLED avec
-// la simulation TMS320 avant de brancher le serveur web (qui devra se
-// connecter au reseau local, en mode STA, avec des identifiants a fournir).
+// Serveur web de l'IHM : l'ESP32 cree son propre point d'acces WiFi
+// (voir config.h) et sert un dashboard + controles HT/PWM1/PWM2.
 
 namespace WebUi {
 
