@@ -1,0 +1,10 @@
+Paramètre TMS320:
+Fréquence, Duty cycle (a convertir en %) etage 1 etage 2
+A partir de lectures ADC:
+Tension entrée, courant d'entrée
+Tension etage 1, courant shunt mosfet 1, température (NTC) etage1, tension étage 2, courant shunt mosfet 2, température etage2.
+Courant sortie.
+
+Commande: activer/desactiver. sortie HT
+activer désactiver PWM1
+activer/desactiver PWM2.
