@@ -7,16 +7,18 @@
 
 namespace {
 
-// Clignotement 1 Hz de la LED RGB embarquee, vert a 30% de luminosite,
-// pour indiquer que le firmware tourne.
-const uint32_t STATUS_LED_PERIOD_MS = 500;
+// Clignotement bref de la LED RGB embarquee, vert a 30% de luminosite,
+// pour indiquer que le firmware tourne (ton=0.2s, toff=3.8s).
+const uint32_t STATUS_LED_ON_MS = 200;
+const uint32_t STATUS_LED_OFF_MS = 3800;
 const uint8_t STATUS_LED_GREEN = (uint8_t)(255 * 0.30f);
 uint32_t g_lastStatusLedMs = 0;
 bool g_statusLedOn = false;
 
 void updateStatusLed() {
   uint32_t now = millis();
-  if (now - g_lastStatusLedMs < STATUS_LED_PERIOD_MS) return;
+  uint32_t period = g_statusLedOn ? STATUS_LED_ON_MS : STATUS_LED_OFF_MS;
+  if (now - g_lastStatusLedMs < period) return;
   g_lastStatusLedMs = now;
   g_statusLedOn = !g_statusLedOn;
   neopixelWrite(PIN_RGB_LED, 0, g_statusLedOn ? STATUS_LED_GREEN : 0, 0);
