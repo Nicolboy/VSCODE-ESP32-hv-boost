@@ -177,19 +177,14 @@ void er_oled_begin() {
 
   // Broches SPI personnalisees : sck, miso (non cable), mosi, ss
   SPI.begin(PIN_OLED_CLK, -1, PIN_OLED_MOSI, PIN_OLED_CS);
-  // 400kHz : vitesse max demandee pour fiabiliser le signal sur cable ruban IDC.
-  SPI.beginTransaction(SPISettings(400000, MSBFIRST, SPI_MODE0));
+  SPI.beginTransaction(SPISettings(20000000, MSBFIRST, SPI_MODE0));
 
-  // Comme dans le firmware MSP430 fonctionnel de reference : /CS n'est PAS
-  // force a LOW avant l'impulsion de reset (seul oled_command/oled_data le
-  // pilotent, par octet).
+  digitalWrite(PIN_OLED_CS, LOW);
   digitalWrite(PIN_OLED_RST, HIGH);
-
-  delay(100);
+  delay(10);
   digitalWrite(PIN_OLED_RST, LOW);
-  delay(100);
+  delay(10);
   digitalWrite(PIN_OLED_RST, HIGH);
-  delay(100);
 
   oled_command(0xFD);  // set command lock
   oled_data(0x12);     // unlock
