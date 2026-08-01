@@ -15,26 +15,84 @@ WebServer server(80);
 
 const char INDEX_HTML[] PROGMEM = R"html(<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>AlimHT</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
-body{font-family:monospace;background:#111;color:#eee;padding:1em}
-h1{color:#0f0;margin-bottom:0.2em}
-table{border-collapse:collapse;margin-top:1em}
-td{padding:2px 10px}
-.on{color:#0f0}.off{color:#f55}
-button{padding:10px 18px;margin:4px 4px 4px 0;font-size:1em;cursor:pointer}
-button.on{background:#0f0;color:#111;border:none}
+:root{
+  --surface:#1a1a19; --page:#0d0d0d;
+  --ink:#ffffff; --ink2:#c3c2b7; --muted:#898781; --track:#2c2c2a;
+  --good:#0ca30c; --warning:#fab219; --serious:#ec835a; --critical:#d03b3b;
+}
+*{box-sizing:border-box}
+body{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;background:var(--page);color:var(--ink);padding:1em;margin:0}
+h1{color:var(--ink);margin:0 0 0.1em;font-size:1.3em}
+.sub{color:var(--ink2);margin:0 0 1em;font-size:0.9em}
+.buttons{margin-bottom:1em}
+button{padding:10px 18px;margin:0 8px 8px 0;font-size:1em;cursor:pointer;border:1px solid var(--muted);border-radius:6px;background:var(--surface);color:var(--ink)}
+button.on{background:var(--good);border-color:var(--good);color:#08210a}
+.gauges{display:grid;grid-template-columns:repeat(auto-fit,minmax(64px,1fr));gap:10px;max-width:560px}
+.gauge{background:var(--surface);border-radius:8px;padding:10px 4px 8px;display:flex;flex-direction:column;align-items:center;text-align:center}
+.gauge-label{color:var(--ink2);font-size:0.8em}
+.gauge-value{color:var(--ink);font-weight:600;font-size:0.85em;font-variant-numeric:tabular-nums;margin:2px 0 6px}
+.gauge-tick{color:var(--muted);font-size:0.65em}
+.gauge-track{position:relative;width:16px;height:120px;border-radius:8px;background:var(--track);overflow:hidden;margin:2px 0}
+.gauge-fill{position:absolute;bottom:0;left:0;width:100%;height:0%;border-radius:8px;transition:height 0.3s}
+.etages{color:var(--ink2);font-size:0.9em;margin-top:1em;line-height:1.6}
 </style></head>
 <body>
 <h1>AlimHT</h1>
-<p>Liaison TMS320 : <span id="link">?</span></p>
-<div>
+<p class="sub">Liaison TMS320 : <span id="link">?</span></p>
+<div class="buttons">
 <button id="b_ht" onclick="cmd('ht')">HT</button>
 <button id="b_pwm1" onclick="cmd('pwm1')">PWM1</button>
 <button id="b_pwm2" onclick="cmd('pwm2')">PWM2</button>
 </div>
-<table id="tel"></table>
+<div class="gauges" id="gauges"></div>
+<div class="etages" id="etages"></div>
 <script>
 let state={ht:false,pwm1:false,pwm2:false};
+
+// Plages physiques (voir doc/ESP32-UART.md, coefficients de calibration ADC).
+const GAUGES=[
+  {key:'vin',  label:'Vin',  unit:'V',  min:0, max:30,  dec:1},
+  {key:'iin',  label:'Iin',  unit:'A',  min:0, max:3,   dec:2},
+  {key:'v1',   label:'V1 (inter)', unit:'V', min:0, max:50, dec:1},
+  {key:'i1',   label:'I1',  unit:'A',  min:0, max:3,   dec:2},
+  {key:'vout', label:'Vout', unit:'V', min:0, max:450, dec:0},
+  {key:'i2',   label:'I2',  unit:'A',  min:0, max:3,   dec:2},
+  {key:'iout', label:'Iout', unit:'mA', min:0, max:50, dec:1, scale:1000},
+];
+
+function buildGauges(){
+  const root=document.getElementById('gauges');
+  root.innerHTML=GAUGES.map(g=>
+    '<div class="gauge">'+
+    '<div class="gauge-label">'+g.label+'</div>'+
+    '<div class="gauge-value" id="v_'+g.key+'">--</div>'+
+    '<div class="gauge-tick">'+g.max+'</div>'+
+    '<div class="gauge-track"><div class="gauge-fill" id="f_'+g.key+'"></div></div>'+
+    '<div class="gauge-tick">'+g.min+' '+g.unit+'</div></div>'
+  ).join('');
+}
+
+// Vert < 50%, jaune 50-75%, orange 75-90%, rouge 90-100%.
+function severityColor(frac){
+  if (frac>=0.90) return 'var(--critical)';
+  if (frac>=0.75) return 'var(--serious)';
+  if (frac>=0.50) return 'var(--warning)';
+  return 'var(--good)';
+}
+
+function updateGauges(d){
+  for (const g of GAUGES){
+    const raw=d[g.key]*(g.scale||1);
+    const frac=Math.max(0,Math.min(1,(raw-g.min)/(g.max-g.min)));
+    document.getElementById('v_'+g.key).textContent=raw.toFixed(g.dec)+' '+g.unit;
+    const fill=document.getElementById('f_'+g.key);
+    fill.style.height=(frac*100)+'%';
+    fill.style.background=severityColor(frac);
+  }
+}
+
 function send(){
   fetch('/api/command',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},
     body:'ht='+(state.ht?1:0)+'&pwm1='+(state.pwm1?1:0)+'&pwm2='+(state.pwm2?1:0)});
@@ -51,13 +109,12 @@ function refresh(){
     for (const k of ['ht','pwm1','pwm2']) {
       document.getElementById('b_'+k).className = state[k] ? 'on' : '';
     }
-    document.getElementById('tel').innerHTML =
-      '<tr><td>Vin</td><td>'+d.vin.toFixed(1)+' V</td><td>Iin</td><td>'+d.iin.toFixed(2)+' A</td></tr>'+
-      '<tr><td>Iout</td><td>'+d.iout.toFixed(2)+' A</td></tr>'+
-      '<tr><td>Etage 1</td><td colspan="3">V='+d.v1.toFixed(1)+'V I='+d.i1.toFixed(2)+'A T='+d.t1.toFixed(1)+'C</td></tr>'+
-      '<tr><td>Etage 2</td><td colspan="3">V='+d.vout.toFixed(1)+'V I='+d.i2.toFixed(2)+'A T='+d.t2.toFixed(1)+'C</td></tr>';
+    updateGauges(d);
+    document.getElementById('etages').innerHTML =
+      'Etage 1 : T='+d.t1.toFixed(1)+'&deg;C &nbsp; Etage 2 : T='+d.t2.toFixed(1)+'&deg;C';
   });
 }
+buildGauges();
 setInterval(refresh, 1000);
 refresh();
 </script>

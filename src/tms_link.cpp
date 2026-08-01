@@ -107,18 +107,21 @@ void updateSimulation() {
   g_telemetry.duty1 = running && g_command.pwm1 ? 45.0f + 2.0f * sinf(t) : 0.0f;
   g_telemetry.duty2 = running && g_command.pwm2 ? 50.0f + 2.0f * sinf(t + 1.0f) : 0.0f;
 
-  g_telemetry.vin = 400.0f + 1.0f * sinf(t * 0.5f);
-  g_telemetry.iin = running ? 1.2f + 0.1f * sinf(t) : 0.05f;
+  // Plages realistes vis-a-vis de la calibration ADC (doc/ESP32-UART.md) :
+  // VIN 30V max, IIN 3A max, V1 50V max, VOUT 450V max, IOUT 50mA max,
+  // I1/I2 3A max.
+  g_telemetry.vin = 20.0f + 1.0f * sinf(t * 0.5f);
+  g_telemetry.iin = running ? 2.5f + 0.3f * sinf(t) : 0.05f;
 
-  g_telemetry.v1 = running && g_command.pwm1 ? 200.0f + 0.5f * sinf(t) : 0.0f;
-  g_telemetry.i1 = running && g_command.pwm1 ? 2.5f + 0.2f * sinf(t * 1.3f) : 0.0f;
+  g_telemetry.v1 = running && g_command.pwm1 ? 40.0f + 3.0f * sinf(t) : 0.0f;
+  g_telemetry.i1 = running && g_command.pwm1 ? 2.0f + 0.4f * sinf(t * 1.3f) : 0.0f;
   g_telemetry.t1 = 40.0f + 5.0f * sinf(t * 0.1f);
 
-  g_telemetry.vout = running && g_command.pwm2 ? 200.0f + 0.5f * sinf(t + 0.3f) : 0.0f;
-  g_telemetry.i2 = running && g_command.pwm2 ? 2.48f + 0.2f * sinf(t * 1.1f) : 0.0f;
+  g_telemetry.vout = running && g_command.pwm2 ? 400.0f + 20.0f * sinf(t + 0.3f) : 0.0f;
+  g_telemetry.i2 = running && g_command.pwm2 ? 2.0f + 0.4f * sinf(t * 1.1f) : 0.0f;
   g_telemetry.t2 = 39.5f + 5.0f * sinf(t * 0.1f + 0.5f);
 
-  g_telemetry.iout = running ? 1.05f + 0.1f * sinf(t * 0.8f) : 0.0f;
+  g_telemetry.iout = running ? 0.030f + 0.010f * sinf(t * 0.8f) : 0.0f;
 
   g_telemetry.lastUpdateMs = now;
   g_lastValidFrameMs = now;
