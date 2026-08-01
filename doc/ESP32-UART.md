@@ -19,7 +19,7 @@ avant de relier les deux cartes.
 
 ## Parametres UART
 
-- Vitesse : **115200 bauds**
+- Vitesse : **57600 bauds**
 - Format : **8N1** (8 bits de donnees, pas de parite, 1 bit de stop)
 - Cote ESP32 : `Serial1`, defini dans `TmsLink::begin()`
   (`src/tms_link.cpp`)
@@ -62,6 +62,25 @@ trame `$T,...*XX` valide n'est recue depuis plus de **2 secondes**
 Tous les champs sont optionnels a l'envoi individuel (un champ absent
 garde sa derniere valeur connue cote ESP32), mais en pratique il est plus
 simple d'envoyer tous les champs a chaque trame.
+
+### Calibration des mesures analogiques (cote TMS320)
+
+Coefficients de mise a l'echelle a appliquer sur la lecture ADC (`Vadc`,
+en volts) pour obtenir la valeur physique a inserer dans la trame
+telemetrie :
+
+| Grandeur | Point de mesure | Pleine echelle / max | Relation |
+|---|---|---|---|
+| `VIN` | 1,8 V @ 20 V | 30 V max | `VIN = Vadc x 11,111` |
+| `IIN` | 2,4 V @ 2,7 A | 3 A max | `IIN = Vadc x 1,125` |
+| `V1` (inter) | 3,2 V @ 100 V | 50 V max | `V1 = Vadc x 31,25` |
+| `VOUT` | 2,8 V @ 500 V | 450 V max | `VOUT = Vadc x 178,571` |
+| `IOUT` | 3,0 V @ 50 mA | 50 mA max | `IOUT = Vadc x 0,016667` (A) |
+| `I1`, `I2` | shunt 0,02 Ω, gain x30 | 3 A max | `I = Vadc / 0,6 = Vadc x 1,6667` |
+
+Note sur `V1` : le point de calibration (3,2V @ 100V) et le max indique
+(50V) sont incoherents en l'etat — a reverifier avec l'auteur des
+mesures avant implementation.
 
 ### Commande : ESP32 -> TMS320 (periodique + a chaque changement)
 

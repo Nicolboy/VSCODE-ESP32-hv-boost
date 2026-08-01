@@ -3,7 +3,7 @@
 // Liaison UART vers le TMS320
 #define PIN_TMS_UART_TX 7
 #define PIN_TMS_UART_RX 6
-#define TMS_UART_BAUD   115200
+#define TMS_UART_BAUD   57600
 
 // LED RGB embarquee (WS2812) de l'ESP32-C3-DevKitM-1
 #define PIN_RGB_LED 8
