@@ -137,10 +137,22 @@ trame si ca ne correspond pas (trame corrompue).
   `updateSimulation()`, qui simule des valeurs realistes (utile comme
   reference de plage de valeurs attendues : `Vin` ~400V, `Iin` ~1.2A,
   `V1`/`Vout` ~200V, `I1`/`I2` ~2.5A, `T1`/`T2` ~40°C).
-- `include/config.h` : `TMS_DUMMY_MODE` (actuellement `true`) fait
-  tourner l'ESP32 sur la simulation interne au lieu de lire l'UART reel.
-  **A passer a `false` une fois le firmware TMS320 pret et teste**, pour
-  activer la reception reelle des trames `$T,...*XX`.
+- `include/config.h` : `TMS_DUMMY_MODE` (actuellement `false`, liaison
+  reelle active) fait tourner l'ESP32 sur la simulation interne au lieu
+  de lire l'UART reel quand mis a `true` (utile pour developper l'IHM
+  sans hardware TMS320 branche).
+
+## A faire cote protocole (pas encore implemente)
+
+- **Trame de defaut** : le TMS doit signaler lui-meme une coupure de
+  securite des sorties PWM (court-circuit, surintensite I1/I2,
+  temperature critique >80°C) — pas de champ dedie actuellement, la
+  telemetrie ne donne que les mesures brutes. Cote ESP32,
+  `OledUi::drawDashboard()` (`src/oled_ui.cpp`) affiche pour l'instant
+  DEFAUT simplement quand HT n'est pas commande (`!cmd.ht`), en attendant
+  cette trame. Quand elle existera, ajouter le champ correspondant dans
+  `Telemetry` (`include/protocol.h`) et brancher la vraie condition dans
+  `drawDashboard()`.
 
 ## Points de vigilance
 
@@ -149,7 +161,7 @@ trame si ca ne correspond pas (trame corrompue).
   pas d'erreur visible — la telemetrie n'avancera simplement pas).
 - Terminer chaque trame par `\n` uniquement (le `\r` est tolere/ignore
   cote ESP32 mais pas necessaire).
-- Ne pas depasser une longueur de ligne de 160 caracteres (buffer fixe
-  cote ESP32, `g_lineBuf[160]` dans `tms_link.cpp`).
+- Ne pas depasser une longueur de ligne de 200 caracteres (buffer fixe
+  cote ESP32, `g_lineBuf[200]` dans `tms_link.cpp`).
 - Verifier au multimetre/oscilloscope le niveau logique du TMS320 avant
   de le relier a l'ESP32-C3 (3,3V attendu).

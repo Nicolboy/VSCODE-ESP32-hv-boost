@@ -13,6 +13,9 @@ namespace {
 
 WebServer server(80);
 
+uint32_t g_lastActivityMs = 0;
+void markActivity() { g_lastActivityMs = millis(); }
+
 const char INDEX_HTML[] PROGMEM = R"html(<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>AlimHT</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -121,9 +124,13 @@ refresh();
 </body></html>
 )html";
 
-void handleRoot() { server.send_P(200, "text/html", INDEX_HTML); }
+void handleRoot() {
+  markActivity();
+  server.send_P(200, "text/html", INDEX_HTML);
+}
 
 void handleState() {
+  markActivity();
   const Telemetry &t = TmsLink::telemetry();
   const CommandState &cmd = TmsLink::command();
   char buf[400];
@@ -139,6 +146,7 @@ void handleState() {
 }
 
 void handleCommand() {
+  markActivity();
   CommandState cmd;
   cmd.ht = server.arg("ht") == "1";
   cmd.pwm1 = server.arg("pwm1") == "1";
@@ -163,5 +171,7 @@ void begin() {
 }
 
 void poll() { server.handleClient(); }
+
+uint32_t lastActivityMs() { return g_lastActivityMs; }
 
 }  // namespace WebUi

@@ -14,7 +14,7 @@ CommandState g_command;
 uint32_t g_lastValidFrameMs = 0;
 uint32_t g_lastCommandSentMs = 0;
 
-char g_lineBuf[160];
+char g_lineBuf[200];
 uint8_t g_lineLen = 0;
 
 const uint32_t COMMAND_SEND_PERIOD_MS = 500;
@@ -75,11 +75,24 @@ bool parseTelemetryLine(char *line) {
 void pollUart() {
   while (Serial1.available()) {
     char c = (char)Serial1.read();
+
     if (c == '\n') {
       g_lineBuf[g_lineLen] = '\0';
-      if (parseTelemetryLine(g_lineBuf)) {
+
+      // Copie avant parsing : parseTelemetryLine() decoupe g_lineBuf en
+      // place (strtok_r, '=' -> '\0'), donc l'afficher apres coup ne
+      // montrerait que le premier fragment tronque.
+      char display[sizeof(g_lineBuf)];
+      if (TMS_DEBUG_ECHO) memcpy(display, g_lineBuf, g_lineLen + 1);
+
+      bool ok = parseTelemetryLine(g_lineBuf);
+      if (ok) {
         g_telemetry.lastUpdateMs = millis();
         g_lastValidFrameMs = g_telemetry.lastUpdateMs;
+      }
+      if (TMS_DEBUG_ECHO) {
+        Serial.print(ok ? "TMS<< " : "TMS<< [rejete] ");
+        Serial.println(display);
       }
       g_lineLen = 0;
     } else if (c != '\r') {
@@ -136,6 +149,7 @@ void sendCommandFrame() {
   char frame[64];
   snprintf(frame, sizeof(frame), "$%s*%02X\n", body, cs);
   Serial1.print(frame);
+  if (TMS_DEBUG_ECHO) Serial.printf("TMS>> %s", frame);
 }
 
 }  // namespace

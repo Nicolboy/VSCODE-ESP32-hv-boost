@@ -15,12 +15,16 @@
 #define PIN_OLED_RST  3
 #define PIN_OLED_DC   1
 
-// Le firmware TMS320 n'est pas encore programme : on simule la telemetrie
-// en local le temps que le hardware TMS320 tourne. Passer a false quand le
-// TMS320 emet reellement des trames $T,...*XX sur l'UART.
-#define TMS_DUMMY_MODE true
+// Le firmware TMS320 emet reellement des trames $T,...*XX sur l'UART :
+// on lit/ecrit le vrai Serial1 au lieu de simuler la telemetrie en local.
+// Repasser a true pour developper l'IHM sans hardware TMS320 branche.
+#define TMS_DUMMY_MODE false
+
+// Recopie sur Serial (USB, moniteur PlatformIO) de chaque trame TMS320
+// recue/envoyee sur Serial1, pour debug sans adaptateur UART externe.
+#define TMS_DEBUG_ECHO true
 
 // WiFi/serveur web de l'IHM : l'ESP32 cree son propre point d'acces
 // (mode AP), pas de dependance a un reseau local existant.
-#define WIFI_AP_SSID     "AlimHT"
+#define WIFI_AP_SSID     "HIVY"
 #define WIFI_AP_PASSWORD "REDACTED_WIFI_PASSWORD"
