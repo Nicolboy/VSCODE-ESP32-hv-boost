@@ -48,6 +48,12 @@ void applyField(const char *tag, float value) {
   else if (!strcmp(tag, "I2")) g_telemetry.i2 = clampNonNegative(value);
   else if (!strcmp(tag, "T2")) g_telemetry.t2 = value;
   else if (!strcmp(tag, "IOUT")) g_telemetry.iout = clampNonNegative(value);
+  else if (!strcmp(tag, "FAULT")) {
+    int code = (int)value;
+    if (code < 0) code = 0;
+    if (code > 5) code = 0;  // code inconnu -> traite comme "pas de defaut"
+    g_telemetry.fault = (uint8_t)code;
+  }
 }
 
 // Parse une ligne "$T,TAG=val,TAG=val,...*XX". Retourne true si le

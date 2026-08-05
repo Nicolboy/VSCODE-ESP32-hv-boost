@@ -155,10 +155,10 @@ void handleState() {
            "{\"link\":%s,\"vin\":%.2f,\"iin\":%.2f,\"iout\":%.2f,"
            "\"v1\":%.2f,\"i1\":%.2f,\"t1\":%.2f,"
            "\"vout\":%.2f,\"i2\":%.2f,\"t2\":%.2f,"
-           "\"ht\":%s,\"pwm1\":%s,\"pwm2\":%s,\"brightness\":%u}",
+           "\"ht\":%s,\"pwm1\":%s,\"pwm2\":%s,\"brightness\":%u,\"fault\":%u}",
            TmsLink::linkOk() ? "true" : "false", t.vin, t.iin, t.iout, t.v1, t.i1, t.t1,
            t.vout, t.i2, t.t2, cmd.ht ? "true" : "false", cmd.pwm1 ? "true" : "false",
-           cmd.pwm2 ? "true" : "false", OledUi::brightness());
+           cmd.pwm2 ? "true" : "false", OledUi::brightness(), t.fault);
   server.send(200, "application/json", buf);
 }
 

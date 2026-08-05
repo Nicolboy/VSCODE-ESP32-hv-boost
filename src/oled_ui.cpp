@@ -460,15 +460,10 @@ void drawDashboard(const Telemetry &t, bool linkOk) {
   // (clignotant) si un probleme est detecte. HT/OFF restent fixes,
   // seul DEFAUT clignote (Blink1Hz).
   //
-  // TODO(protocole) : la detection de probleme n'existe pas encore --
-  // problemDetected reste a false pour l'instant. Le TMS doit signaler
-  // lui-meme le defaut (court-circuit, surintensite I1/I2, temperature
-  // critique >80C) via une trame dediee, pas encore implementee cote TMS
-  // (cf. discussion). Quand cette trame existera (ajouter un champ
-  // correspondant dans Telemetry/protocol.h), c'est ici qu'il faudra
-  // brancher la vraie condition, plutot que de deviner des seuils cote
-  // ESP32 sans donnee du TMS pour les confirmer.
-  bool problemDetected = false;
+  // t.fault (voir enum TmsFault, protocol.h) est signale par le TMS320
+  // lui-meme via le champ FAULT de la trame telemetrie -- pas de seuils
+  // devines cote ESP32.
+  bool problemDetected = (t.fault != FAULT_NONE);
   if (problemDetected) {
     if (Blink1Hz()) u8g2.drawStr(COL3_X + 2, 53, "DEFAUT");
   } else {
@@ -479,7 +474,7 @@ void drawDashboard(const Telemetry &t, bool linkOk) {
   // Regle reelle : HT actif (cmd.ht) ET Vout > 50V -- jamais avec DEFAUT,
   // meme si Vout mesure encore > 50V par inertie a ce moment-la.
   // Calee tout en bas a droite de la colonne 3 (= bord ecran).
-  bool dangerActive = cmd.ht && voutDisp > VOUT_DANGER_THRESHOLD;
+  bool dangerActive = cmd.ht && !problemDetected && voutDisp > VOUT_DANGER_THRESHOLD;
   if ((DEBUG_FORCE_ALL_ICONS || dangerActive) && Blink1Hz()) {
     drawWarningIconHalf(SCREEN_W - WARNING_ICON_WIDTH / 2, 64 - WARNING_ICON_HEIGHT / 2);
   }
