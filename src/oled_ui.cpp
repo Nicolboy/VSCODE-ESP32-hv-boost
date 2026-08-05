@@ -4,6 +4,7 @@
 #include <U8g2lib.h>
 #include <SPI.h>
 #include <WiFi.h>
+#include <math.h>
 
 #include "config.h"            // PIN_OLED_MOSI / CLK / CS / DC / RST, WIFI_AP_SSID
 #include "tms_link.h"
@@ -36,10 +37,26 @@ U8G2_SSD1322_NHD_256X64_F_4W_HW_SPI u8g2(
 const uint32_t REFRESH_PERIOD_MS = 300;
 uint32_t g_lastRefreshMs = 0;
 
-// Port du serveur web de l'IHM -- doit rester synchronise avec
-// `WebServer server(80)` dans web_ui.cpp (pas d'accesseur dedie pour
-// l'instant, les deux sont a changer ensemble si le port change).
-const uint16_t WEB_UI_PORT = 80;
+// Luminosite/contraste. g_brightness est la position du slider web
+// (0-255, valeur brute conservee telle quelle pour re-synchroniser le
+// slider -- voir OledUi::brightness()) ; 159 = valeur par defaut de la
+// sequence d'init u8g2 pour ce controleur (u8x8_d_ssd1322.c, 0xC1).
+//
+// L'oeil percoit la luminosite de facon logarithmique : un mapping
+// lineaire slider->registre 0xC1 concentre toute la variation
+// perceptible dans le dernier tiers de la course (0-150 ne change
+// quasiment rien a l'oeil, 200-255 fait toute la difference -- constate
+// sur le hardware reel). GAMMA est configurable pour affiner apres test
+// visuel (2.2 = valeur de depart standard, cf. courbes gamma d'affichage).
+const float BRIGHTNESS_GAMMA = 2.2f;
+
+uint8_t sliderToContrast(uint8_t slider_0_255) {
+  float normalized = slider_0_255 / 255.0f;
+  float corrected = powf(normalized, BRIGHTNESS_GAMMA);
+  return (uint8_t)(corrected * 255.0f + 0.5f);
+}
+
+uint8_t g_brightness = 159;
 
 // ---------------------------------------------------------------------
 // Splash logo (voir doc/OLED-u8g2.md pour l'historique des problemes
@@ -132,6 +149,15 @@ const float ALERT_THRESHOLD = 0.90f;  // 90% de l'echelle -> icone attention
 // des seuils/etat reels. Positions validees -> desactive.
 const bool DEBUG_FORCE_ALL_ICONS = false;
 
+// DEBUG PROVISOIRE : force VIN/IIN/VOUT/IOUT a des valeurs de test
+// realistes (au lieu de la telemetrie reelle) pour verifier l'affichage.
+// Remettre a false une fois le test termine.
+const bool DEBUG_FORCE_TEST_VALUES = false;
+const float TEST_VIN = 10.5f;
+const float TEST_IIN = 1.5f;
+const float TEST_VOUT = 358.0f;
+const float TEST_IOUT = 0.037f;  // 37 mA
+
 // Seuils temperature -- PROVISOIRES, a corriger avec les vraies specs.
 const float T1_ALERT_C = 70.0f;
 const float T2_ALERT_C = 70.0f;
@@ -216,7 +242,7 @@ void drawVBar(int x, const char *label, float value, float vmin, float vmax,
   char buf[8];
   u8g2.setFont(u8g2_font_4x6_tr);
   snprintf(buf, sizeof(buf), "%.0f", vmax * labelScale);
-  u8g2.drawStr(x + BAR_W + 3, BAR_Y + 5 - LABEL_Y_SHIFT, buf);
+  u8g2.drawStr(x + BAR_W + 3, BAR_Y + 3 - LABEL_Y_SHIFT, buf);  // remonte de 2px
   snprintf(buf, sizeof(buf), "%.0f", vmin * labelScale);
   u8g2.drawStr(x + BAR_W + 3, BAR_Y + BAR_H - LABEL_Y_SHIFT, buf);
 
@@ -333,7 +359,9 @@ void drawDashboard(const Telemetry &t, bool linkOk) {
 
   // --- bandeau haut : HIVY (gauche) / SYS:OK (centre) / WIFI:... (droite) ---
   // SSID dynamique (config.h, maintenant "HIVY") + IP reelle (WiFi.softAPIP(),
-  // attribuee par WiFi.softAP() dans web_ui.cpp) + port (WEB_UI_PORT ci-dessus).
+  // attribuee par WiFi.softAP() dans web_ui.cpp). Pas de port : 80 est le
+  // port HTTP par defaut, pas necessaire pour se connecter (http://<ip>/
+  // suffit, le navigateur l'ajoute lui-meme).
   u8g2.setFont(u8g2_font_5x8_tr);
   u8g2.setFontPosTop();
   u8g2.drawStr(0, 0, "HIVY");
@@ -346,34 +374,42 @@ void drawDashboard(const Telemetry &t, bool linkOk) {
   }
 
   IPAddress ip = WiFi.softAPIP();
-  snprintf(buf, sizeof(buf), "WIFI:%s %d.%d.%d.%d:%u", WIFI_AP_SSID, ip[0], ip[1],
-           ip[2], ip[3], WEB_UI_PORT);
+  snprintf(buf, sizeof(buf), "WIFI:%s %d.%d.%d.%d", WIFI_AP_SSID, ip[0], ip[1], ip[2], ip[3]);
   int wWifi = u8g2.getStrWidth(buf);
   u8g2.drawStr(SCREEN_W - wWifi, 0, buf);
 
   // --- colonne 1 : VIN / IIN / VOUT / IOUT ---
+  // DEBUG_FORCE_TEST_VALUES : valeurs de test au lieu de la telemetrie
+  // reelle (t.vin/t.iin/t.vout/t.iout), pour verifier l'affichage.
+  float vinDisp = DEBUG_FORCE_TEST_VALUES ? TEST_VIN : t.vin;
+  float iinDisp = DEBUG_FORCE_TEST_VALUES ? TEST_IIN : t.iin;
+  float voutDisp = DEBUG_FORCE_TEST_VALUES ? TEST_VOUT : t.vout;
+  float ioutDisp = DEBUG_FORCE_TEST_VALUES ? TEST_IOUT : t.iout;
+
   // Logo 4 (IOUT) : -10 encore -3px = -13.
-  drawVBar(COL1_X + 2,  "VIN",  t.vin,  VIN_MIN,  VIN_MAX,  true, -14);
-  drawVBar(COL1_X + 29, "IIN",  t.iin,  IIN_MIN,  IIN_MAX,  true, -14);
-  drawVBar(COL1_X + 56, "VOUT", t.vout, VOUT_MIN, VOUT_MAX, true, -14);
+  // Bargraphs 2/3/4 (IIN/VOUT/IOUT) + valeurs + mesures decales de 2px
+  // a droite (29->31, 56->58, 83->85) ; VIN (bargraph 1) inchange.
+  drawVBar(COL1_X + 2,  "VIN",  vinDisp,  VIN_MIN,  VIN_MAX,  true, -14);
+  drawVBar(COL1_X + 32, "IIN",  iinDisp,  IIN_MIN,  IIN_MAX,  true, -14);
+  drawVBar(COL1_X + 58, "VOUT", voutDisp, VOUT_MIN, VOUT_MAX, true, -14);
   // labelScale=1000 : bornes affichees en mA (0/50) au lieu de A (0/0.05).
-  drawVBar(COL1_X + 83, "IOUT", t.iout, IOUT_MIN, IOUT_MAX, true, -13, 1000.0f);
+  drawVBar(COL1_X + 85, "IOUT", ioutDisp, IOUT_MIN, IOUT_MAX, true, -13, 1000.0f);
 
   u8g2.setFont(u8g2_font_6x12_tr);
-  snprintf(buf, sizeof(buf), "%.1fV", t.vin);
+  snprintf(buf, sizeof(buf), "%.1fV", vinDisp);
   u8g2.drawStr(COL1_X, BAR_Y + BAR_H + 4, buf);
-  snprintf(buf, sizeof(buf), "%.1fA", t.iin);  // 2 digits (X.Y)
-  u8g2.drawStr(COL1_X + 27, BAR_Y + BAR_H + 4, buf);
-  snprintf(buf, sizeof(buf), "%.0fV", t.vout);
-  u8g2.drawStr(COL1_X + 54, BAR_Y + BAR_H + 4, buf);
-  snprintf(buf, sizeof(buf), "%.0fmA", t.iout * 1000.0f);
-  u8g2.drawStr(COL1_X + 81, BAR_Y + BAR_H + 4, buf);
+  snprintf(buf, sizeof(buf), "%.1fA", iinDisp);  // 2 digits (X.Y)
+  u8g2.drawStr(COL1_X + 30, BAR_Y + BAR_H + 4, buf);
+  snprintf(buf, sizeof(buf), "%.0fV", voutDisp);
+  u8g2.drawStr(COL1_X + 56, BAR_Y + BAR_H + 4, buf);
+  snprintf(buf, sizeof(buf), "%.0fmA", ioutDisp * 1000.0f);
+  u8g2.drawStr(COL1_X + 83, BAR_Y + BAR_H + 4, buf);
 
   u8g2.drawVLine(COL1_COL2_DIVIDER_X, BAR_Y - 6, BAR_H + 20);
 
   // --- colonne 2 : RENDEMENT (50-100%, pas d'alerte) / PIN / POUT ---
-  float pin  = t.vin  * t.iin;
-  float pout = t.vout * t.iout;
+  float pin  = vinDisp  * iinDisp;
+  float pout = voutDisp * ioutDisp;
   float eff  = (pin > 0.01f) ? (pout / pin * 100.0f) : 0.0f;
   if (eff > 100.0f) eff = 100.0f;
   if (eff < 0.0f)   eff = 0.0f;
@@ -391,9 +427,9 @@ void drawDashboard(const Telemetry &t, bool linkOk) {
   snprintf(buf, sizeof(buf), "%.0f%%", eff);
   u8g2.drawStr(COL2_X + 7, BAR_Y + BAR_H + 4, buf);
   snprintf(buf, sizeof(buf), "%.1fW", pin);
-  u8g2.drawStr(COL2_X + 41, BAR_Y + BAR_H + 4, buf);
+  u8g2.drawStr(COL2_X + 33, BAR_Y + BAR_H + 4, buf);  // mesure PIN seule, -6px puis -2px
   snprintf(buf, sizeof(buf), "%.1fW", pout);
-  u8g2.drawStr(COL2_X + 68, BAR_Y + BAR_H + 4, buf);
+  u8g2.drawStr(COL2_X + 64, BAR_Y + BAR_H + 4, buf);  // mesure POUT seule, -4px
 
   u8g2.drawVLine(COL3_X, BAR_Y - 6, BAR_H + 20);
 
@@ -443,7 +479,7 @@ void drawDashboard(const Telemetry &t, bool linkOk) {
   // Regle reelle : HT actif (cmd.ht) ET Vout > 50V -- jamais avec DEFAUT,
   // meme si Vout mesure encore > 50V par inertie a ce moment-la.
   // Calee tout en bas a droite de la colonne 3 (= bord ecran).
-  bool dangerActive = cmd.ht && t.vout > VOUT_DANGER_THRESHOLD;
+  bool dangerActive = cmd.ht && voutDisp > VOUT_DANGER_THRESHOLD;
   if ((DEBUG_FORCE_ALL_ICONS || dangerActive) && Blink1Hz()) {
     drawWarningIconHalf(SCREEN_W - WARNING_ICON_WIDTH / 2, 64 - WARNING_ICON_HEIGHT / 2);
   }
@@ -474,6 +510,8 @@ void begin() {
   // donc le nibble remap doit rester actif ici, contrairement a
   // l'hypothese initiale.
   u8g2.sendF("caa", 0xA0, 0x14, 0x11);
+
+  u8g2.setContrast(sliderToContrast(g_brightness));
 
   showSplash();
 }
@@ -506,5 +544,14 @@ void update(const Telemetry &t, bool linkOk) {
   g_lastRefreshMs = now;
   drawDashboard(t, linkOk);
 }
+
+void setBrightness(uint8_t value) {
+  g_brightness = value;
+  u8g2.setContrast(sliderToContrast(g_brightness));
+}
+
+// Valeur brute du slider (0-255), pas la valeur gamma-corrigee envoyee
+// au registre -- c'est ce que la page web doit reafficher.
+uint8_t brightness() { return g_brightness; }
 
 }  // namespace OledUi

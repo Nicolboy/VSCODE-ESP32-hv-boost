@@ -5,6 +5,7 @@
 #include <WiFi.h>
 
 #include "config.h"
+#include "oled_ui.h"
 #include "tms_link.h"
 
 namespace WebUi {
@@ -40,6 +41,9 @@ button.on{background:var(--good);border-color:var(--good);color:#08210a}
 .gauge-track{position:relative;width:16px;height:120px;border-radius:8px;background:var(--track);overflow:hidden;margin:2px 0}
 .gauge-fill{position:absolute;bottom:0;left:0;width:100%;height:0%;border-radius:8px;transition:height 0.3s}
 .etages{color:var(--ink2);font-size:0.9em;margin-top:1em;line-height:1.6}
+.brightness{margin-bottom:1em}
+.brightness label{display:block;color:var(--ink2);font-size:0.85em;margin-bottom:4px}
+.brightness input[type=range]{width:100%;max-width:300px}
 </style></head>
 <body>
 <h1>AlimHT</h1>
@@ -48,6 +52,12 @@ button.on{background:var(--good);border-color:var(--good);color:#08210a}
 <button id="b_ht" onclick="cmd('ht')">HT</button>
 <button id="b_pwm1" onclick="cmd('pwm1')">PWM1</button>
 <button id="b_pwm2" onclick="cmd('pwm2')">PWM2</button>
+</div>
+<div class="brightness">
+<label for="brightness">Luminosite ecran OLED</label>
+<input type="range" id="brightness" min="0" max="255" value="159"
+       onmousedown="brightnessBusy=true" ontouchstart="brightnessBusy=true"
+       onchange="brightnessBusy=false;setBrightness(this.value)">
 </div>
 <div class="gauges" id="gauges"></div>
 <div class="etages" id="etages"></div>
@@ -100,6 +110,12 @@ function send(){
   fetch('/api/command',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},
     body:'ht='+(state.ht?1:0)+'&pwm1='+(state.pwm1?1:0)+'&pwm2='+(state.pwm2?1:0)});
 }
+
+let brightnessBusy=false;
+function setBrightness(v){
+  fetch('/api/brightness',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},
+    body:'value='+v});
+}
 function cmd(k){
   state[k]=!state[k];
   document.getElementById('b_'+k).className = state[k] ? 'on' : '';
@@ -115,6 +131,7 @@ function refresh(){
     updateGauges(d);
     document.getElementById('etages').innerHTML =
       'Etage 1 : T='+d.t1.toFixed(1)+'&deg;C &nbsp; Etage 2 : T='+d.t2.toFixed(1)+'&deg;C';
+    if (!brightnessBusy) document.getElementById('brightness').value = d.brightness;
   });
 }
 buildGauges();
@@ -138,10 +155,10 @@ void handleState() {
            "{\"link\":%s,\"vin\":%.2f,\"iin\":%.2f,\"iout\":%.2f,"
            "\"v1\":%.2f,\"i1\":%.2f,\"t1\":%.2f,"
            "\"vout\":%.2f,\"i2\":%.2f,\"t2\":%.2f,"
-           "\"ht\":%s,\"pwm1\":%s,\"pwm2\":%s}",
+           "\"ht\":%s,\"pwm1\":%s,\"pwm2\":%s,\"brightness\":%u}",
            TmsLink::linkOk() ? "true" : "false", t.vin, t.iin, t.iout, t.v1, t.i1, t.t1,
            t.vout, t.i2, t.t2, cmd.ht ? "true" : "false", cmd.pwm1 ? "true" : "false",
-           cmd.pwm2 ? "true" : "false");
+           cmd.pwm2 ? "true" : "false", OledUi::brightness());
   server.send(200, "application/json", buf);
 }
 
@@ -152,6 +169,15 @@ void handleCommand() {
   cmd.pwm1 = server.arg("pwm1") == "1";
   cmd.pwm2 = server.arg("pwm2") == "1";
   TmsLink::setCommand(cmd);
+  server.send(200, "text/plain", "OK");
+}
+
+void handleBrightness() {
+  markActivity();
+  int v = server.arg("value").toInt();
+  if (v < 0) v = 0;
+  if (v > 255) v = 255;
+  OledUi::setBrightness((uint8_t)v);
   server.send(200, "text/plain", "OK");
 }
 
@@ -167,6 +193,7 @@ void begin() {
   server.on("/", HTTP_GET, handleRoot);
   server.on("/api/state", HTTP_GET, handleState);
   server.on("/api/command", HTTP_POST, handleCommand);
+  server.on("/api/brightness", HTTP_POST, handleBrightness);
   server.begin();
 }
 

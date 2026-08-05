@@ -28,20 +28,26 @@ uint8_t checksumOf(const char *s, size_t len) {
 }
 
 // Applique une valeur "TAG=xxx" a la telemetrie courante.
+// Aucune tension/courant physique n'est negative sur cette alim (les
+// legeres valeurs negatives observees viennent du bruit/offset ADC
+// autour de zero) -- on les ramene a 0 des la reception, pour tout
+// affichage en aval (OLED, page web).
+float clampNonNegative(float value) { return value < 0.0f ? 0.0f : value; }
+
 void applyField(const char *tag, float value) {
   if (!strcmp(tag, "FREQ1")) g_telemetry.freq1 = value;
   else if (!strcmp(tag, "FREQ2")) g_telemetry.freq2 = value;
   else if (!strcmp(tag, "DUTY1")) g_telemetry.duty1 = value;
   else if (!strcmp(tag, "DUTY2")) g_telemetry.duty2 = value;
-  else if (!strcmp(tag, "VIN")) g_telemetry.vin = value;
-  else if (!strcmp(tag, "IIN")) g_telemetry.iin = value;
-  else if (!strcmp(tag, "V1")) g_telemetry.v1 = value;
-  else if (!strcmp(tag, "I1")) g_telemetry.i1 = value;
+  else if (!strcmp(tag, "VIN")) g_telemetry.vin = clampNonNegative(value);
+  else if (!strcmp(tag, "IIN")) g_telemetry.iin = clampNonNegative(value);
+  else if (!strcmp(tag, "V1")) g_telemetry.v1 = clampNonNegative(value);
+  else if (!strcmp(tag, "I1")) g_telemetry.i1 = clampNonNegative(value);
   else if (!strcmp(tag, "T1")) g_telemetry.t1 = value;
-  else if (!strcmp(tag, "VOUT")) g_telemetry.vout = value;
-  else if (!strcmp(tag, "I2")) g_telemetry.i2 = value;
+  else if (!strcmp(tag, "VOUT")) g_telemetry.vout = clampNonNegative(value);
+  else if (!strcmp(tag, "I2")) g_telemetry.i2 = clampNonNegative(value);
   else if (!strcmp(tag, "T2")) g_telemetry.t2 = value;
-  else if (!strcmp(tag, "IOUT")) g_telemetry.iout = value;
+  else if (!strcmp(tag, "IOUT")) g_telemetry.iout = clampNonNegative(value);
 }
 
 // Parse une ligne "$T,TAG=val,TAG=val,...*XX". Retourne true si le
