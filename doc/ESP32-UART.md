@@ -193,16 +193,17 @@ trame si ca ne correspond pas (trame corrompue).
   description du protocole (source de verite en cas de doute).
 - `src/tms_link.cpp` : parsing des trames `$T,...`, envoi des trames
   `$C,...`, gestion du timeout de liaison. Contient aussi
-  `updateSimulation()`, qui simule des valeurs realistes (utile comme
-  reference de plage de valeurs attendues : `Vin` ~400V, `Iin` ~1.2A,
-  `V1`/`Vout` ~200V, `I1`/`I2` ~2.5A, `T1`/`T2` ~40°C).
-
-  ⚠️ **A revoir** : ces plages de simulation ne correspondent plus aux
-  valeurs reelles mesurees. `V1` ne depassera jamais 50V en usage normal
-  (pas 200V), `VIN` plafonne a 36,7V (pas 400V — c'est `VOUT` qui monte a
-  400V), et `IIN`/`I1`/`I2` sont a confirmer avec les gains mesures
-  ci-dessus. A mettre a jour pour que les jauges OLED/web soient
-  coherentes au moment du passage en liaison reelle.
+  `updateSimulation()`, qui simule des valeurs realistes : `Vin` ~20V,
+  `Iin` ~2.5A, `V1` ~40V, `Vout` ~400V, `I1`/`I2` ~2A, `T1`/`T2` ~40°C
+  (deja coherent avec les plages mesurees ci-dessus, verifie dans le
+  code — une note precedente affirmait le contraire par erreur, en se
+  basant sur une vieille description perimee de ce fichier plutot que
+  sur le code reel).
+- Bornes d'affichage des bargraphs OLED (`src/oled_ui.cpp`) et jauges
+  web (`src/web_ui.cpp`), volontairement **en dessous** de la pleine
+  echelle ADC reelle (marge d'usage normal, pas la limite physique du
+  capteur) : `VIN_MAX=25V`, `IIN_MAX=3A`, `VOUT_MIN=200V`/`MAX=500V`,
+  `IOUT_MAX=50mA`, `I1_MAX=I2_MAX=3A`.
 - `include/config.h` : `TMS_DUMMY_MODE` (actuellement `false`, liaison
   reelle active) fait tourner l'ESP32 sur la simulation interne au lieu
   de lire l'UART reel quand mis a `true` (utile pour developper l'IHM

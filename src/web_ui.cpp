@@ -64,15 +64,16 @@ button.on{background:var(--good);border-color:var(--good);color:#08210a}
 <script>
 let state={ht:false,pwm1:false,pwm2:false};
 
-// Plages physiques (voir doc/ESP32-UART.md, coefficients de calibration ADC).
+// Plages d'affichage (voir doc/ESP32-UART.md) -- alignees sur les bornes
+// des bargraphs OLED (src/oled_ui.cpp), pas la pleine echelle ADC.
 const GAUGES=[
-  {key:'vin',  label:'Vin',  unit:'V',  min:0, max:30,  dec:1},
-  {key:'iin',  label:'Iin',  unit:'A',  min:0, max:3,   dec:2},
+  {key:'vin',  label:'Vin',  unit:'V',  min:0,   max:25,  dec:1},
+  {key:'iin',  label:'Iin',  unit:'A',  min:0,   max:3,   dec:2},
   {key:'v1',   label:'V1 (inter)', unit:'V', min:0, max:50, dec:1},
-  {key:'i1',   label:'I1',  unit:'A',  min:0, max:3,   dec:2},
-  {key:'vout', label:'Vout', unit:'V', min:0, max:450, dec:0},
-  {key:'i2',   label:'I2',  unit:'A',  min:0, max:3,   dec:2},
-  {key:'iout', label:'Iout', unit:'mA', min:0, max:50, dec:1, scale:1000},
+  {key:'i1',   label:'I1',  unit:'A',  min:0,   max:3,   dec:2},
+  {key:'vout', label:'Vout', unit:'V', min:200, max:500, dec:0},
+  {key:'i2',   label:'I2',  unit:'A',  min:0,   max:3,   dec:2},
+  {key:'iout', label:'Iout', unit:'mA', min:0,  max:50,  dec:1, scale:1000},
 ];
 
 function buildGauges(){
