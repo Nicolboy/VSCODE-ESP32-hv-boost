@@ -16,14 +16,41 @@
 // XX = XOR de tous les octets entre '$' et '*', en hexadecimal majuscule.
 //
 // FAULT (entier, 0-5) : code de defaut courant, transmis par le TMS320
-// des qu'il coupe lui-meme les sorties PWM par securite. Rester a
-// FAULT=0 tant qu'aucun defaut n'est actif -- le TMS320 doit remettre
-// 0 automatiquement une fois la cause du defaut disparue (pas de "latch"
-// cote protocole ; si un verrouillage manuel est necessaire, il doit
-// etre gere cote TMS320, pas suppose par l'ESP32).
+// des qu'il coupe lui-meme les sorties PWM par securite.
+//
+// IMPORTANT -- deux comportements differents selon le code :
+// - EMUSTOP (1) : peut etre acquitte, le TMS320 repart (retour spontane
+//   a FAULT_NONE possible une fois le breakpoint retire).
+// - OVERCURRENT_I1/I2, OVERTEMP_T1/T2 (2-5) : ne s'effacent JAMAIS
+//   automatiquement, ni a la disparition de leur cause, ni par commande
+//   UART -- seul un cycle d'alimentation de la carte les reinitialise.
+// Dans tous les cas, l'ESP32 affiche simplement le dernier code recu, de
+// maniere persistante, sans jamais supposer un retour spontane a
+// FAULT_NONE pour les codes 2-5.
+//
+// Priorite quand plusieurs defauts coexistent cote TMS320 :
+// OVERCURRENT_I1 > OVERCURRENT_I2 > OVERTEMP_T1 > OVERTEMP_T2 > EMUSTOP
+// (EMUSTOP a la priorite la plus BASSE malgre son code=1 : en
+// developpement il se declenche a chaque halte du debogueur et ne doit
+// jamais masquer un defaut de puissance reel).
+//
+// EMUSTOP arrete a la fois l'UART et le PWM cote TMS320 (attendu, pas
+// une panne) : cote affichage ESP32 (OledUi::isRealFault()/faultLabel(),
+// src/oled_ui.cpp), EMUSTOP EST affiche nommement ("SYS:EMUSTOP"), et
+// contrairement a toute autre perte de liaison, l'ESP32 continue
+// d'afficher "EMUSTOP" (derniere valeur connue) plutot que de basculer
+// sur "KO" au bout du timeout de 2s -- le temps que le TMS320 reparte.
+//
+// Sur un defaut I/T (2-5), le TMS320 pilote expressement la broche
+// DISCHARGE a 0 pour decharger activement le condensateur de sortie
+// (~2s) ; sur EMUSTOP, DISCHARGE n'est PAS actionne (pas de routine de
+// defaut, juste un CPU arrete). Dans les deux cas, l'icone danger reste
+// pilotee par VOUT seul, independamment de FAULT (voir
+// VOUT_DANGER_THRESHOLD, src/oled_ui.cpp) : le condensateur peut encore
+// etre charge quel que soit le code.
 enum TmsFault : uint8_t {
   FAULT_NONE = 0,
-  FAULT_SHORT_CIRCUIT = 1,
+  FAULT_EMUSTOP = 1,  // le debogueur a arrete le CPU (pas un defaut de puissance)
   FAULT_OVERCURRENT_I1 = 2,
   FAULT_OVERCURRENT_I2 = 3,
   FAULT_OVERTEMP_T1 = 4,  // T1 > 80 C

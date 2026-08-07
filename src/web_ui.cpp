@@ -41,6 +41,7 @@ button.on{background:var(--good);border-color:var(--good);color:#08210a}
 .gauge-track{position:relative;width:16px;height:120px;border-radius:8px;background:var(--track);overflow:hidden;margin:2px 0}
 .gauge-fill{position:absolute;bottom:0;left:0;width:100%;height:0%;border-radius:8px;transition:height 0.3s}
 .etages{color:var(--ink2);font-size:0.9em;margin-top:1em;line-height:1.6}
+.fault-active{color:var(--critical);font-weight:700}
 .brightness{margin-bottom:1em}
 .brightness label{display:block;color:var(--ink2);font-size:0.85em;margin-bottom:4px}
 .brightness input[type=range]{width:100%;max-width:300px}
@@ -48,6 +49,7 @@ button.on{background:var(--good);border-color:var(--good);color:#08210a}
 <body>
 <h1>AlimHT</h1>
 <p class="sub">Liaison TMS320 : <span id="link">?</span></p>
+<p class="sub">Etat : <span id="fault">?</span></p>
 <div class="buttons">
 <button id="b_ht" onclick="cmd('ht')">HT</button>
 <button id="b_pwm1" onclick="cmd('pwm1')">PWM1</button>
@@ -63,6 +65,9 @@ button.on{background:var(--good);border-color:var(--good);color:#08210a}
 <div class="etages" id="etages"></div>
 <script>
 let state={ht:false,pwm1:false,pwm2:false};
+
+// Libelles FAULT (voir enum TmsFault, include/protocol.h) -- index = code.
+const FAULT_LABELS=['OK','EMUSTOP','OVERI1','OVERI2','OVERT1','OVERT2'];
 
 // Plages d'affichage (voir doc/ESP32-UART.md) -- alignees sur les bornes
 // des bargraphs OLED (src/oled_ui.cpp), pas la pleine echelle ADC.
@@ -125,6 +130,14 @@ function cmd(k){
 function refresh(){
   fetch('/api/state').then(r=>r.json()).then(d=>{
     document.getElementById('link').textContent = d.link ? 'OK' : 'PERDU';
+    // "KO" seulement si liaison perdue ET dernier defaut connu != EMUSTOP
+    // (1) : EMUSTOP arrete aussi l'UART cote TMS320 (attendu, pas une
+    // panne) -- on continue d'afficher "EMUSTOP" (derniere valeur connue)
+    // le temps que le TMS320 reparte, plutot que "KO".
+    const faultEl = document.getElementById('fault');
+    const showKo = !d.link && d.fault !== 1;
+    faultEl.textContent = showKo ? 'KO' : (FAULT_LABELS[d.fault] || ('CODE '+d.fault));
+    faultEl.className = (showKo || d.fault) ? 'fault-active' : '';
     state = {ht:d.ht, pwm1:d.pwm1, pwm2:d.pwm2};
     for (const k of ['ht','pwm1','pwm2']) {
       document.getElementById('b_'+k).className = state[k] ? 'on' : '';

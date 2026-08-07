@@ -162,8 +162,11 @@ const float TEST_IOUT = 0.037f;  // 37 mA
 const float T1_ALERT_C = 70.0f;
 const float T2_ALERT_C = 70.0f;
 
-// Icone danger principale : affichee seulement si HT actif ET Vout > 50V
-// (jamais avec DEFAUT, meme si Vout resterait > 50V par inertie).
+// Icone danger principale : DOIT dependre UNIQUEMENT de VOUT (doc/ESP32-UART.md,
+// retour firmware TMS320) -- jamais de HT ni de FAULT. Un defaut ne
+// decharge pas le condensateur de sortie (HV_EN isole la charge mais les
+// ~400V restent presents) ; masquer l'icone sur HT=off ou FAULT!=0
+// rassurerait l'operateur precisement quand le risque est maximal.
 const float VOUT_DANGER_THRESHOLD = 50.0f;
 
 // ---------------------------------------------------------------------
@@ -186,6 +189,28 @@ const int COL1_COL2_DIVIDER_X = COL2_X - 2;
 // Clignotement 1s ON / 1s OFF, partage par toutes les icones d'alerte
 // et les mots d'etat de defaut (DEFAUT, SYS:KO).
 bool Blink1Hz() { return (millis() / 1000) % 2 == 0; }
+
+// Tous les codes FAULT (y compris EMUSTOP) sont affiches comme un defaut :
+// EMUSTOP arrete a la fois l'UART et le PWM cote TMS320, donc l'operateur
+// doit le voir (SYS:EMUSTOP) plutot que de juste constater une liaison
+// perdue. Difference avec les defauts 2-5 : EMUSTOP peut etre acquitte et
+// le TMS320 repart (retour spontane a FAULT_NONE possible) ; les defauts
+// surintensite/surchauffe (2-5), eux, ne s'acquittent pas -- seul un cycle
+// d'alimentation de la carte les reinitialise (cf. protocol.h).
+bool isRealFault(uint8_t fault) { return fault != FAULT_NONE; }
+
+// Libelle court du code FAULT (voir enum TmsFault, protocol.h), pour
+// affichage OLED (SYS:) et web.
+const char *faultLabel(uint8_t fault) {
+  switch (fault) {
+    case FAULT_EMUSTOP: return "EMUSTOP";
+    case FAULT_OVERCURRENT_I1: return "OVERI1";
+    case FAULT_OVERCURRENT_I2: return "OVERI2";
+    case FAULT_OVERTEMP_T1: return "OVERT1";
+    case FAULT_OVERTEMP_T2: return "OVERT2";
+    default: return "OK";  // FAULT_NONE
+  }
+}
 
 // Mini icone triangle + "!" (dessin vectoriel, trop petit pour un bitmap net)
 void drawAlertIcon(int x, int y) {
@@ -366,9 +391,17 @@ void drawDashboard(const Telemetry &t, bool linkOk) {
   u8g2.setFontPosTop();
   u8g2.drawStr(0, 0, "HIVY");
 
-  // SYS:KO clignote (Blink1Hz) pour attirer l'attention ; SYS:OK reste fixe.
-  if (linkOk || Blink1Hz()) {
-    snprintf(buf, sizeof(buf), "SYS:%s", linkOk ? "OK" : "KO");
+  // SYS: affiche le defaut TMS320 courant (FAULT, voir faultLabel()).
+  // Cas particulier EMUSTOP : l'UART s'arrete aussi cote TMS320 pendant
+  // la halte (attendu, pas une panne) -- on continue donc d'afficher
+  // "EMUSTOP" (derniere valeur connue) plutot que de basculer sur "KO"
+  // au bout des 2s de timeout, le temps que le TMS320 reparte. "KO"
+  // reste affiche pour toute autre perte de liaison (derniere valeur
+  // connue = OK ou un vrai defaut 2-5, ou aucune trame jamais recue).
+  bool showKo = !linkOk && t.fault != FAULT_EMUSTOP;
+  bool sysProblem = showKo || isRealFault(t.fault);
+  if (!sysProblem || Blink1Hz()) {
+    snprintf(buf, sizeof(buf), "SYS:%s", showKo ? "KO" : faultLabel(t.fault));
     int wSys = u8g2.getStrWidth(buf);
     u8g2.drawStr((SCREEN_W - wSys) / 2 - 40, 0, buf);  // historique : +20, -40, -20 = -40
   }
@@ -463,7 +496,7 @@ void drawDashboard(const Telemetry &t, bool linkOk) {
   // t.fault (voir enum TmsFault, protocol.h) est signale par le TMS320
   // lui-meme via le champ FAULT de la trame telemetrie -- pas de seuils
   // devines cote ESP32.
-  bool problemDetected = (t.fault != FAULT_NONE);
+  bool problemDetected = isRealFault(t.fault);
   if (problemDetected) {
     if (Blink1Hz()) u8g2.drawStr(COL3_X + 2, 53, "DEFAUT");
   } else {
@@ -471,10 +504,10 @@ void drawDashboard(const Telemetry &t, bool linkOk) {
   }
 
   // icone danger principale (20x20), clignotante (Blink1Hz, 1s ON/1s OFF).
-  // Regle reelle : HT actif (cmd.ht) ET Vout > 50V -- jamais avec DEFAUT,
-  // meme si Vout mesure encore > 50V par inertie a ce moment-la.
-  // Calee tout en bas a droite de la colonne 3 (= bord ecran).
-  bool dangerActive = cmd.ht && !problemDetected && voutDisp > VOUT_DANGER_THRESHOLD;
+  // Regle reelle : UNIQUEMENT Vout > 50V -- independant de HT et de
+  // FAULT (voir VOUT_DANGER_THRESHOLD ci-dessus). Calee tout en bas a
+  // droite de la colonne 3 (= bord ecran).
+  bool dangerActive = voutDisp > VOUT_DANGER_THRESHOLD;
   if ((DEBUG_FORCE_ALL_ICONS || dangerActive) && Blink1Hz()) {
     drawWarningIconHalf(SCREEN_W - WARNING_ICON_WIDTH / 2, 64 - WARNING_ICON_HEIGHT / 2);
   }
