@@ -20,4 +20,10 @@ const CommandState &command();
 // recemment (ou si on est en mode simulation).
 bool linkOk();
 
+// Derniere trame $C envoyee telle quelle (ex. "$C,HT=1,V1SET=35.0,
+// VOSET=400.0,RUN=1*XX\n"), pour l'echo "frame_sent" de l'API HTTP
+// d'orchestration (voir doc/orchestration.md). Pointeur stable, valide
+// jusqu'au prochain appel a setCommand()/poll().
+const char *lastFrameSent();
+
 }  // namespace TmsLink

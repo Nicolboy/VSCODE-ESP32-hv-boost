@@ -190,17 +190,12 @@ const int COL1_COL2_DIVIDER_X = COL2_X - 2;
 // et les mots d'etat de defaut (DEFAUT, SYS:KO).
 bool Blink1Hz() { return (millis() / 1000) % 2 == 0; }
 
-// Tous les codes FAULT (y compris EMUSTOP) sont affiches comme un defaut :
-// EMUSTOP arrete a la fois l'UART et le PWM cote TMS320, donc l'operateur
-// doit le voir (SYS:EMUSTOP) plutot que de juste constater une liaison
-// perdue. Difference avec les defauts 2-5 : EMUSTOP peut etre acquitte et
-// le TMS320 repart (retour spontane a FAULT_NONE possible) ; les defauts
-// surintensite/surchauffe (2-5), eux, ne s'acquittent pas -- seul un cycle
-// d'alimentation de la carte les reinitialise (cf. protocol.h).
-bool isRealFault(uint8_t fault) { return fault != FAULT_NONE; }
-
 // Libelle court du code FAULT (voir enum TmsFault, protocol.h), pour
-// affichage OLED (SYS:) et web.
+// affichage OLED (SYS:) et web. Tous les codes (y compris les
+// transitoires EMUSTOP/LINKLOST) sont affiches nommement -- voir
+// isFaultLatched() (protocol.h) pour la distinction verrouille/transitoire
+// qui pilote le comportement (DEFAUT persistant colonne 3, "KO" ou non
+// sur perte de liaison, cf. usages plus bas).
 const char *faultLabel(uint8_t fault) {
   switch (fault) {
     case FAULT_EMUSTOP: return "EMUSTOP";
@@ -208,6 +203,9 @@ const char *faultLabel(uint8_t fault) {
     case FAULT_OVERCURRENT_I2: return "OVERI2";
     case FAULT_OVERTEMP_T1: return "OVERT1";
     case FAULT_OVERTEMP_T2: return "OVERT2";
+    case FAULT_OVERVOLT_V1: return "OVERV1";
+    case FAULT_OVERVOLT_VOUT: return "OVERVOUT";
+    case FAULT_LINK_LOST: return "LINKLOST";
     default: return "OK";  // FAULT_NONE
   }
 }
@@ -392,16 +390,23 @@ void drawDashboard(const Telemetry &t, bool linkOk) {
   u8g2.drawStr(0, 0, "HIVY");
 
   // SYS: affiche le defaut TMS320 courant (FAULT, voir faultLabel()).
-  // Cas particulier EMUSTOP : l'UART s'arrete aussi cote TMS320 pendant
-  // la halte (attendu, pas une panne) -- on continue donc d'afficher
-  // "EMUSTOP" (derniere valeur connue) plutot que de basculer sur "KO"
-  // au bout des 2s de timeout, le temps que le TMS320 reparte. "KO"
-  // reste affiche pour toute autre perte de liaison (derniere valeur
-  // connue = OK ou un vrai defaut 2-5, ou aucune trame jamais recue).
-  bool showKo = !linkOk && t.fault != FAULT_EMUSTOP;
-  bool sysProblem = showKo || isRealFault(t.fault);
+  // Cas particuliers EMUSTOP et LINK_LOST (defauts transitoires, voir
+  // isFaultLatched() dans protocol.h) : ce sont deja des etats de "liaison
+  // interrompue" cote TMS320 lui-meme (UART/PWM arretes), donc on continue
+  // d'afficher leur libelle (derniere valeur connue) plutot que de
+  // basculer sur "KO" au bout des 2s de timeout, le temps que le TMS320
+  // reparte. "KO" reste affiche pour toute autre perte de liaison
+  // (derniere valeur connue = OK ou un defaut verrouille 2-7, ou aucune
+  // trame jamais recue).
+  bool showKo = !linkOk && t.fault != FAULT_EMUSTOP && t.fault != FAULT_LINK_LOST;
+  bool sysProblem = showKo || t.fault != FAULT_NONE;
   if (!sysProblem || Blink1Hz()) {
-    snprintf(buf, sizeof(buf), "SYS:%s", showKo ? "KO" : faultLabel(t.fault));
+    // REJ (voir doc/esp32_agent.md) : un compteur qui avance signale que
+    // la consigne affichee (V1SP/VOSP) n'est PAS celle demandee -- accole
+    // a SYS: plutot qu'un nouvel emplacement, puisque c'est un indicateur
+    // de sante systeme comme FAULT. Position/mise en forme a ajuster une
+    // fois visible sur l'ecran reel.
+    snprintf(buf, sizeof(buf), "SYS:%s REJ:%u", showKo ? "KO" : faultLabel(t.fault), t.rej);
     int wSys = u8g2.getStrWidth(buf);
     u8g2.drawStr((SCREEN_W - wSys) / 2 - 40, 0, buf);  // historique : +20, -40, -20 = -40
   }
@@ -424,7 +429,13 @@ void drawDashboard(const Telemetry &t, bool linkOk) {
   // a droite (29->31, 56->58, 83->85) ; VIN (bargraph 1) inchange.
   drawVBar(COL1_X + 2,  "VIN",  vinDisp,  VIN_MIN,  VIN_MAX,  true, -14);
   drawVBar(COL1_X + 32, "IIN",  iinDisp,  IIN_MIN,  IIN_MAX,  true, -14);
-  drawVBar(COL1_X + 58, "VOUT", voutDisp, VOUT_MIN, VOUT_MAX, true, -14);
+  // VOSP=0 (t.voutSp) : convention TMS320 pour "etage 2 desactive" (pas
+  // un vrai point de consigne 0V, voir doc/tms320_agent.md) -- sans cet
+  // indicateur, VOUT~0V en mode normal (etage 1 seul) ressemblerait a une
+  // panne. Position/largeur du libelle a ajuster une fois visible sur
+  // l'ecran reel (comme les autres reglages pixel de ce dashboard).
+  bool stage1Only = (t.voutSp == 0.0f);
+  drawVBar(COL1_X + 58, stage1Only ? "ETAGE1" : "VOUT", voutDisp, VOUT_MIN, VOUT_MAX, true, -14);
   // labelScale=1000 : bornes affichees en mA (0/50) au lieu de A (0/0.05).
   drawVBar(COL1_X + 85, "IOUT", ioutDisp, IOUT_MIN, IOUT_MAX, true, -13, 1000.0f);
 
@@ -495,8 +506,11 @@ void drawDashboard(const Telemetry &t, bool linkOk) {
   //
   // t.fault (voir enum TmsFault, protocol.h) est signale par le TMS320
   // lui-meme via le champ FAULT de la trame telemetrie -- pas de seuils
-  // devines cote ESP32.
-  bool problemDetected = isRealFault(t.fault);
+  // devines cote ESP32. DEFAUT persistant (isFaultLatched, codes 2-7)
+  // seulement : EMUSTOP/LINK_LOST (1/8) sont transitoires et deja
+  // signales via SYS: (ci-dessus) + l'icone danger, sans bloquer sur
+  // "DEFAUT" ici puisqu'ils s'auto-effacent des que le TMS320 repart.
+  bool problemDetected = isFaultLatched(t.fault);
   if (problemDetected) {
     if (Blink1Hz()) u8g2.drawStr(COL3_X + 2, 53, "DEFAUT");
   } else {

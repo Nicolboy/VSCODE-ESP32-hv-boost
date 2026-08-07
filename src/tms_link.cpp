@@ -50,9 +50,19 @@ void applyField(const char *tag, float value) {
   else if (!strcmp(tag, "IOUT")) g_telemetry.iout = clampNonNegative(value);
   else if (!strcmp(tag, "FAULT")) {
     int code = (int)value;
-    if (code < 0) code = 0;
-    if (code > 5) code = 0;  // code inconnu -> traite comme "pas de defaut"
+    if (code < 0 || code > 8) code = 0;  // code inconnu -> traite comme "pas de defaut"
     g_telemetry.fault = (uint8_t)code;
+  }
+  else if (!strcmp(tag, "STATE")) {
+    int state = (int)value;
+    if (state < 0 || state > 5) state = 0;
+    g_telemetry.state = (uint8_t)state;
+  }
+  else if (!strcmp(tag, "V1SP")) g_telemetry.v1Sp = clampNonNegative(value);
+  else if (!strcmp(tag, "VOSP")) g_telemetry.voutSp = clampNonNegative(value);
+  else if (!strcmp(tag, "REJ")) {
+    if (value < 0) value = 0;
+    g_telemetry.rej = (uint16_t)value;
   }
 }
 
@@ -118,50 +128,62 @@ void pollUart() {
 }
 
 // Simule un convertisseur en fonctionnement pour pouvoir developper et
-// tester l'IHM (OLED + web) sans firmware TMS320.
+// tester l'IHM (OLED + web) sans firmware TMS320. Suit g_command.run /
+// v1Set/voutSet comme le ferait la regulation reelle (voir
+// doc/tms320_agent.md : STATE=4 des que "etabli", VOSP=0 si voutSet=0 =
+// mode etage 1 seul).
 void updateSimulation() {
   uint32_t now = millis();
   if (now - g_lastSimMs < SIM_UPDATE_PERIOD_MS) return;
   g_lastSimMs = now;
 
   float t = now / 1000.0f;
-  bool running = g_command.ht;
+  bool running = g_command.run;
+  bool stage2 = running && g_command.voutSet > 0.0f;
 
-  g_telemetry.freq1 = 100000.0f;
+  g_telemetry.freq1 = 200000.0f;
   g_telemetry.freq2 = 100000.0f;
-  g_telemetry.duty1 = running && g_command.pwm1 ? 45.0f + 2.0f * sinf(t) : 0.0f;
-  g_telemetry.duty2 = running && g_command.pwm2 ? 50.0f + 2.0f * sinf(t + 1.0f) : 0.0f;
+  g_telemetry.duty1 = running ? 45.0f + 2.0f * sinf(t) : 0.0f;
+  g_telemetry.duty2 = stage2 ? 50.0f + 2.0f * sinf(t + 1.0f) : 0.0f;
 
-  // Plages realistes vis-a-vis de la calibration ADC (doc/ESP32-UART.md) :
-  // VIN 30V max, IIN 3A max, V1 50V max, VOUT 450V max, IOUT 50mA max,
-  // I1/I2 3A max.
-  g_telemetry.vin = 20.0f + 1.0f * sinf(t * 0.5f);
-  g_telemetry.iin = running ? 2.5f + 0.3f * sinf(t) : 0.05f;
+  // Plages realistes (doc/tms320_agent.md, doc/mesure-cartepuissance.md) :
+  // VIN ~10-20V, IIN 3A max, V1 jusqu'a 50V, VOUT jusqu'a 400-500V,
+  // IOUT 50mA max, I1/I2 3A max.
+  g_telemetry.vin = 12.0f + 1.0f * sinf(t * 0.5f);
+  g_telemetry.iin = running ? 0.6f + 0.1f * sinf(t) : 0.05f;
 
-  g_telemetry.v1 = running && g_command.pwm1 ? 40.0f + 3.0f * sinf(t) : 0.0f;
-  g_telemetry.i1 = running && g_command.pwm1 ? 2.0f + 0.4f * sinf(t * 1.3f) : 0.0f;
+  g_telemetry.v1 = running ? g_command.v1Set + 0.5f * sinf(t) : 0.0f;
+  g_telemetry.i1 = running ? 0.6f + 0.1f * sinf(t * 1.3f) : 0.0f;
   g_telemetry.t1 = 40.0f + 5.0f * sinf(t * 0.1f);
 
-  g_telemetry.vout = running && g_command.pwm2 ? 400.0f + 20.0f * sinf(t + 0.3f) : 0.0f;
-  g_telemetry.i2 = running && g_command.pwm2 ? 2.0f + 0.4f * sinf(t * 1.1f) : 0.0f;
+  g_telemetry.vout = stage2 ? g_command.voutSet + 2.0f * sinf(t + 0.3f) : 0.0f;
+  g_telemetry.i2 = stage2 ? 0.1f + 0.02f * sinf(t * 1.1f) : 0.0f;
   g_telemetry.t2 = 39.5f + 5.0f * sinf(t * 0.1f + 0.5f);
 
-  g_telemetry.iout = running ? 0.030f + 0.010f * sinf(t * 0.8f) : 0.0f;
+  g_telemetry.iout = stage2 ? 0.020f + 0.005f * sinf(t * 0.8f) : 0.0f;
+
+  g_telemetry.fault = FAULT_NONE;
+  g_telemetry.state = running ? 4 : 0;  // simu : etabli immediatement, pas de rampe
+  g_telemetry.v1Sp = running ? g_command.v1Set : 0.0f;
+  g_telemetry.voutSp = stage2 ? g_command.voutSet : 0.0f;
+  g_telemetry.rej = 0;
 
   g_telemetry.lastUpdateMs = now;
   g_lastValidFrameMs = now;
 }
 
+char g_lastFrame[64] = "";
+
 void sendCommandFrame() {
-  char body[48];
-  int n = snprintf(body, sizeof(body), "C,HT=%d,PWM1=%d,PWM2=%d", g_command.ht ? 1 : 0,
-                    g_command.pwm1 ? 1 : 0, g_command.pwm2 ? 1 : 0);
+  char body[64];
+  int n = snprintf(body, sizeof(body), "C,HT=%d,V1SET=%.1f,VOSET=%.1f,RUN=%d",
+                    g_command.ht ? 1 : 0, g_command.v1Set, g_command.voutSet,
+                    g_command.run ? 1 : 0);
   uint8_t cs = checksumOf(body, n);
 
-  char frame[64];
-  snprintf(frame, sizeof(frame), "$%s*%02X\n", body, cs);
-  Serial1.print(frame);
-  if (TMS_DEBUG_ECHO) Serial.printf("TMS>> %s", frame);
+  snprintf(g_lastFrame, sizeof(g_lastFrame), "$%s*%02X\n", body, cs);
+  Serial1.print(g_lastFrame);
+  if (TMS_DEBUG_ECHO) Serial.printf("TMS>> %s", g_lastFrame);
 }
 
 }  // namespace
@@ -192,6 +214,7 @@ void setCommand(const CommandState &cmd) {
 
 const Telemetry &telemetry() { return g_telemetry; }
 const CommandState &command() { return g_command; }
+const char *lastFrameSent() { return g_lastFrame; }
 
 bool linkOk() {
   if (TMS_DUMMY_MODE) return true;

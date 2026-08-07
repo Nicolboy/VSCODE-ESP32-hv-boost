@@ -67,6 +67,48 @@ dessus), `V1SET` (15-50 V), `VOSET` (200-500 V **ou 0**), `RUN`.
 Envoi toutes les **500 ms**, et immédiatement à chaque changement depuis
 l'IHM (OLED/web) ou un appel de l'API HTTP décrite plus bas.
 
+### À corriger en priorité — relevé sur cible du firmware ESP32 actuel
+
+Trame réellement reçue par le TMS320, lue au débogueur dans son buffer de
+réception :
+
+```
+$C,HT=1,V1SET=0.0,VOSET=0.0,RUN=0*69
+```
+
+Checksum correct, parsing correct, `HT=1` bien pris en compte : la liaison
+fonctionne. Deux défauts subsistent, et ils se masquent mutuellement.
+
+**`RUN` n'est jamais mis à 1.** C'est la cause directe de l'absence de PWM
+en sortie du TMS320. `HT` ne démarre rien : le TMS320 n'arme le chemin de
+puissance que sur `RUN=1`, et ne consulte `HT` qu'ensuite, pour autoriser
+`HV_EN` une fois les deux étages établis. Le bouton « HV_EN » de l'IHM est
+donc mappé sur le mauvais tag — il manque une **commande marche/arrêt
+distincte**, qui pilote `RUN`.
+
+En mode étage 1 seul (l'état actuel de la carte, voir plus bas), `HT` est
+de toute façon **sans aucun effet** : `HV_EN` exige que l'étage 2 soit
+actif. Le seul bouton utile aujourd'hui est celui qui n'existe pas.
+
+**`V1SET=0.0` est hors plage et refusé à chaque trame.** La plage est 15 à
+50 V. Le TMS320 refuse la consigne en bloc, conserve la précédente, et
+incrémente `REJ` — observé à 5 et croissant d'une unité par trame. La
+consigne réellement appliquée restait donc à 15,0 V, sa valeur
+d'initialisation côté TMS320, et non celle affichée à l'écran. `V1SET`
+doit être initialisé dans la plage : **35,0 V** est un point de départ
+raisonnable. (`VOSET=0.0` est correct, c'est le marqueur du mode étage 1
+seul.)
+
+Séquence de test attendue une fois corrigé : `V1SET=35.0`, `VOSET=0.0`,
+puis `RUN=1`.
+
+**`REJ` doit être affiché par l'IHM.** Ce compteur était visible en
+télémétrie depuis le début et signalait le problème. Un `REJ` qui
+s'incrémente signifie que **ce qui est affiché à l'écran n'est pas ce qui
+est appliqué** — c'est exactement le cas de figure qui rend un
+dysfonctionnement indéchiffrable. Le comparer à `V1SP`/`VOSP` permet de
+savoir laquelle des consignes a été refusée.
+
 ### `VOSET=0` — mode étage 1 seul, **état actuel de la carte**
 
 C'est le point le plus important de cette révision pour l'ESP32.
@@ -206,6 +248,8 @@ sans dépendance à un état applicatif complexe.
 
 ## Points de vigilance
 
+- `HT` ne démarre pas la conversion — seul `RUN` le fait. Ce sont deux
+  commandes indépendantes et l'IHM doit exposer les deux.
 - Checksum en majuscules, sinon rejet silencieux — aucune erreur visible,
   seulement une télémétrie qui n'avance plus côté récepteur.
 - Ne jamais dupliquer les bornes physiques (`V1SET`/`VOSET`) côté ESP32 :

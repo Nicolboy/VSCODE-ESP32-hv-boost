@@ -1,6 +1,7 @@
 #include "web_ui.h"
 
 #include <Arduino.h>
+#include <ArduinoJson.h>
 #include <WebServer.h>
 #include <WiFi.h>
 
@@ -50,10 +51,10 @@ button.on{background:var(--good);border-color:var(--good);color:#08210a}
 <h1>AlimHT</h1>
 <p class="sub">Liaison TMS320 : <span id="link">?</span></p>
 <p class="sub">Etat : <span id="fault">?</span></p>
+<p class="sub">Consignes rejetees (REJ) : <span id="rej">0</span></p>
 <div class="buttons">
+<button id="b_run" onclick="cmd('run')">Marche</button>
 <button id="b_ht" onclick="cmd('ht')">HT</button>
-<button id="b_pwm1" onclick="cmd('pwm1')">PWM1</button>
-<button id="b_pwm2" onclick="cmd('pwm2')">PWM2</button>
 </div>
 <div class="brightness">
 <label for="brightness">Luminosite ecran OLED</label>
@@ -64,10 +65,17 @@ button.on{background:var(--good);border-color:var(--good);color:#08210a}
 <div class="gauges" id="gauges"></div>
 <div class="etages" id="etages"></div>
 <script>
-let state={ht:false,pwm1:false,pwm2:false};
+// RUN et HT sont deux commandes independantes cote TMS320 (voir
+// doc/esp32_agent.md) : RUN arme le chemin de puissance (regulation), HT
+// n'autorise HV_EN qu'ensuite, une fois RUN actif et l'etage 2 etabli.
+let state={ht:false,run:false};
 
 // Libelles FAULT (voir enum TmsFault, include/protocol.h) -- index = code.
-const FAULT_LABELS=['OK','EMUSTOP','OVERI1','OVERI2','OVERT1','OVERT2'];
+const FAULT_LABELS=['OK','EMUSTOP','OVERI1','OVERI2','OVERT1','OVERT2','OVERV1','OVERVOUT','LINKLOST'];
+// Codes transitoires (se relevent seuls) : ne jamais basculer sur "KO" au
+// timeout de liaison tant que c'est la derniere valeur connue -- voir
+// isFaultLatched() cote firmware (include/protocol.h).
+const FAULT_TRANSIENT=[1,8];
 
 // Plages d'affichage (voir doc/ESP32-UART.md) -- alignees sur les bornes
 // des bargraphs OLED (src/oled_ui.cpp), pas la pleine echelle ADC.
@@ -114,7 +122,7 @@ function updateGauges(d){
 
 function send(){
   fetch('/api/command',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},
-    body:'ht='+(state.ht?1:0)+'&pwm1='+(state.pwm1?1:0)+'&pwm2='+(state.pwm2?1:0)});
+    body:'ht='+(state.ht?1:0)+'&run='+(state.run?1:0)});
 }
 
 let brightnessBusy=false;
@@ -130,20 +138,27 @@ function cmd(k){
 function refresh(){
   fetch('/api/state').then(r=>r.json()).then(d=>{
     document.getElementById('link').textContent = d.link ? 'OK' : 'PERDU';
-    // "KO" seulement si liaison perdue ET dernier defaut connu != EMUSTOP
-    // (1) : EMUSTOP arrete aussi l'UART cote TMS320 (attendu, pas une
-    // panne) -- on continue d'afficher "EMUSTOP" (derniere valeur connue)
-    // le temps que le TMS320 reparte, plutot que "KO".
+    // "KO" seulement si liaison perdue ET dernier defaut connu n'est pas
+    // transitoire (1=EMUSTOP, 8=liaison perdue cote TMS320) : ces deux
+    // codes arretent aussi l'UART cote TMS320 (attendu, pas une panne) --
+    // on continue d'afficher le code (derniere valeur connue) le temps
+    // que le TMS320 reparte, plutot que "KO".
     const faultEl = document.getElementById('fault');
-    const showKo = !d.link && d.fault !== 1;
+    const showKo = !d.link && !FAULT_TRANSIENT.includes(d.fault);
     faultEl.textContent = showKo ? 'KO' : (FAULT_LABELS[d.fault] || ('CODE '+d.fault));
     faultEl.className = (showKo || d.fault) ? 'fault-active' : '';
-    state = {ht:d.ht, pwm1:d.pwm1, pwm2:d.pwm2};
-    for (const k of ['ht','pwm1','pwm2']) {
-      document.getElementById('b_'+k).className = state[k] ? 'on' : '';
-    }
+    const rejEl = document.getElementById('rej');
+    rejEl.textContent = d.rej;
+    rejEl.className = d.rej > 0 ? 'fault-active' : '';
+    state = {ht:d.ht, run:d.run};
+    document.getElementById('b_ht').className = state.ht ? 'on' : '';
+    document.getElementById('b_run').className = state.run ? 'on' : '';
     updateGauges(d);
+    // vout_sp==0 = mode etage 1 seul (convention TMS320, pas une panne) --
+    // voir doc/tms320_agent.md.
+    const stage1Only = d.vout_sp === 0;
     document.getElementById('etages').innerHTML =
+      (stage1Only ? '<strong>Etage 1 seul (etage 2 desactive)</strong><br>' : '') +
       'Etage 1 : T='+d.t1.toFixed(1)+'&deg;C &nbsp; Etage 2 : T='+d.t2.toFixed(1)+'&deg;C';
     if (!brightnessBusy) document.getElementById('brightness').value = d.brightness;
   });
@@ -169,19 +184,23 @@ void handleState() {
            "{\"link\":%s,\"vin\":%.2f,\"iin\":%.2f,\"iout\":%.2f,"
            "\"v1\":%.2f,\"i1\":%.2f,\"t1\":%.2f,"
            "\"vout\":%.2f,\"i2\":%.2f,\"t2\":%.2f,"
-           "\"ht\":%s,\"pwm1\":%s,\"pwm2\":%s,\"brightness\":%u,\"fault\":%u}",
+           "\"ht\":%s,\"run\":%s,\"brightness\":%u,\"fault\":%u,\"vout_sp\":%.2f,\"rej\":%u}",
            TmsLink::linkOk() ? "true" : "false", t.vin, t.iin, t.iout, t.v1, t.i1, t.t1,
-           t.vout, t.i2, t.t2, cmd.ht ? "true" : "false", cmd.pwm1 ? "true" : "false",
-           cmd.pwm2 ? "true" : "false", OledUi::brightness(), t.fault);
+           t.vout, t.i2, t.t2, cmd.ht ? "true" : "false", cmd.run ? "true" : "false",
+           OledUi::brightness(), t.fault, t.voutSp, t.rej);
   server.send(200, "application/json", buf);
 }
 
 void handleCommand() {
   markActivity();
-  CommandState cmd;
+  // Dashboard simple : pilote HT et RUN, deux commandes independantes
+  // cote TMS320 (voir doc/esp32_agent.md) -- RUN arme le chemin de
+  // puissance, HT n'autorise HV_EN qu'ensuite (RUN actif + etage 2
+  // etabli). v1Set/voutSet restent geres par /api/setpoint, pas par ce
+  // dashboard.
+  CommandState cmd = TmsLink::command();
   cmd.ht = server.arg("ht") == "1";
-  cmd.pwm1 = server.arg("pwm1") == "1";
-  cmd.pwm2 = server.arg("pwm2") == "1";
+  cmd.run = server.arg("run") == "1";
   TmsLink::setCommand(cmd);
   server.send(200, "text/plain", "OK");
 }
@@ -193,6 +212,92 @@ void handleBrightness() {
   if (v > 255) v = 255;
   OledUi::setBrightness((uint8_t)v);
   server.send(200, "text/plain", "OK");
+}
+
+// ---------------------------------------------------------------------
+// API HTTP d'orchestration externe (doc/orchestration.md, doc/esp32_agent.md)
+// -- distincte du dashboard ci-dessus (destine a un humain), destinee a un
+// agent/orchestrateur externe (JSON, champs de controle STATE/V1SP/VOSP/
+// REJ inclus). L'ESP32 relaie fidelement les trames $C/$T, il ne valide
+// ni ne clippe les bornes physiques -- seul le TMS320 en est juge.
+// ---------------------------------------------------------------------
+
+void serializeTelemetry(JsonObject obj) {
+  const Telemetry &t = TmsLink::telemetry();
+  obj["freq1"] = t.freq1;
+  obj["freq2"] = t.freq2;
+  obj["duty1"] = t.duty1;
+  obj["duty2"] = t.duty2;
+  obj["vin"] = t.vin;
+  obj["iin"] = t.iin;
+  obj["v1"] = t.v1;
+  obj["i1"] = t.i1;
+  obj["t1"] = t.t1;
+  obj["vout"] = t.vout;
+  obj["i2"] = t.i2;
+  obj["t2"] = t.t2;
+  obj["iout"] = t.iout;
+  obj["fault"] = t.fault;
+  obj["state"] = t.state;
+  obj["v1_sp"] = t.v1Sp;
+  obj["vout_sp"] = t.voutSp;
+  obj["rej"] = t.rej;
+  obj["link_ok"] = TmsLink::linkOk();
+  obj["age_ms"] = millis() - t.lastUpdateMs;
+}
+
+void handleTelemetry() {
+  markActivity();
+  JsonDocument doc;
+  serializeTelemetry(doc.to<JsonObject>());
+  String out;
+  serializeJson(doc, out);
+  server.send(200, "application/json", out);
+}
+
+// Fusion partielle : part de l'etat de commande connu (TmsLink::command())
+// et n'ecrase que les champs presents dans le corps JSON -- un champ
+// absent ne doit rien changer (meme convention que les tags $C optionnels
+// cote TMS320). Repond la trame $C effectivement envoyee et un releve de
+// telemetrie juste apres, pour verifier "rej" sans requete supplementaire.
+void handleSetpoint() {
+  markActivity();
+  JsonDocument req;
+  DeserializationError err = deserializeJson(req, server.arg("plain"));
+
+  CommandState cmd = TmsLink::command();
+  if (!err) {
+    if (!req["ht"].isNull()) cmd.ht = req["ht"].as<bool>();
+    if (!req["v1_set"].isNull()) cmd.v1Set = req["v1_set"].as<float>();
+    if (!req["vout_set"].isNull()) cmd.voutSet = req["vout_set"].as<float>();
+    if (!req["run"].isNull()) cmd.run = req["run"].as<bool>();
+  }
+  TmsLink::setCommand(cmd);
+
+  JsonDocument resp;
+  resp["frame_sent"] = TmsLink::lastFrameSent();
+  serializeTelemetry(resp["telemetry_after"].to<JsonObject>());
+  String out;
+  serializeJson(resp, out);
+  server.send(200, "application/json", out);
+}
+
+// Arret d'urgence logiciel : RUN=0, HT=0. Ne depend d'aucun parsing de
+// corps JSON (contrairement a handleSetpoint()) pour rester disponible
+// meme si une requete precedente etait malformee.
+void handleStop() {
+  markActivity();
+  CommandState cmd = TmsLink::command();
+  cmd.run = false;
+  cmd.ht = false;
+  TmsLink::setCommand(cmd);
+
+  JsonDocument resp;
+  resp["frame_sent"] = TmsLink::lastFrameSent();
+  serializeTelemetry(resp["telemetry_after"].to<JsonObject>());
+  String out;
+  serializeJson(resp, out);
+  server.send(200, "application/json", out);
 }
 
 }  // namespace
@@ -208,6 +313,10 @@ void begin() {
   server.on("/api/state", HTTP_GET, handleState);
   server.on("/api/command", HTTP_POST, handleCommand);
   server.on("/api/brightness", HTTP_POST, handleBrightness);
+  // API d'orchestration externe (doc/orchestration.md).
+  server.on("/api/telemetry", HTTP_GET, handleTelemetry);
+  server.on("/api/setpoint", HTTP_POST, handleSetpoint);
+  server.on("/api/stop", HTTP_POST, handleStop);
   server.begin();
 }
 
