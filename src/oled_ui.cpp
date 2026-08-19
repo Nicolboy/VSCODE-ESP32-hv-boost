@@ -206,6 +206,7 @@ const char *faultLabel(uint8_t fault) {
     case FAULT_OVERVOLT_V1: return "OVERV1";
     case FAULT_OVERVOLT_VOUT: return "OVERVOUT";
     case FAULT_LINK_LOST: return "LINKLOST";
+    case FAULT_UNDERVOLT_VIN: return "UNDERVIN";
     default: return "OK";  // FAULT_NONE
   }
 }

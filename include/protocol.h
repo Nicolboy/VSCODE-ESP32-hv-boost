@@ -30,23 +30,25 @@
 // normal (etage 1 seul etabli), pas une panne -- l'IHM doit le signaler
 // explicitement (voir OledUi::drawDashboard()).
 //
-// FAULT (entier, 0-8) : code de defaut courant, transmis par le TMS320
+// FAULT (entier, 0-9) : code de defaut courant, transmis par le TMS320
 // des qu'il coupe lui-meme les sorties PWM par securite.
 //
 // IMPORTANT -- deux comportements differents selon le code (voir
 // isFaultLatched()) :
 // - Codes TRANSITOIRES (1=EMUSTOP, 8=liaison UART perdue cote TMS320) :
 //   se relevent seuls, retour spontane a FAULT_NONE possible.
-// - Codes VERROUILLES (2-7) : ne s'effacent JAMAIS automatiquement, ni a
-//   la disparition de leur cause, ni par commande UART -- seul un cycle
+// - Codes VERROUILLES (2-7, 9) : ne s'effacent JAMAIS automatiquement, ni
+//   a la disparition de leur cause, ni par commande UART -- seul un cycle
 //   d'alimentation de la carte les reinitialise. L'ESP32 affiche le
 //   dernier code recu de maniere persistante, sans jamais supposer un
 //   retour spontane a FAULT_NONE pour ces codes.
 //
 // Priorite quand plusieurs defauts coexistent cote TMS320 (telle
-// qu'implementee) :
+// qu'implementee, doc/CLAUDE-esp32.md) :
 // OVERCURRENT_I1 > OVERCURRENT_I2 > OVERVOLT_V1 > OVERVOLT_VOUT >
-// OVERTEMP_T1 > OVERTEMP_T2 > LINK_LOST > EMUSTOP
+// UNDERVOLT_VIN > OVERTEMP_T1 > OVERTEMP_T2 > LINK_LOST > EMUSTOP
+// (purement informatif cote ESP32 : un seul code FAULT est recu a la
+// fois, la priorisation est entierement decidee cote TMS320.)
 //
 // EMUSTOP et LINK_LOST arretent aussi l'UART cote TMS320 (attendu, pas
 // une panne) : cote affichage ESP32 (isFaultLatched()/faultLabel() dans
@@ -56,10 +58,10 @@
 // connu plutot que de basculer sur "KO" au bout du timeout de 2s -- le
 // temps que le TMS320 reparte.
 //
-// Sur un defaut verrouille (2-7), le TMS320 pilote expressement la broche
-// DISCHARGE a 0 pour decharger activement le condensateur de sortie
-// (~2s) ; sur EMUSTOP/LINK_LOST, DISCHARGE n'est PAS actionne (pas de
-// routine de defaut). Dans tous les cas, l'icone danger reste pilotee
+// Sur un defaut verrouille (2-7, 9), le TMS320 pilote expressement la
+// broche DISCHARGE a 0 pour decharger activement le condensateur de
+// sortie (~2s) ; sur EMUSTOP/LINK_LOST, DISCHARGE n'est PAS actionne (pas
+// de routine de defaut). Dans tous les cas, l'icone danger reste pilotee
 // par VOUT seul, independamment de FAULT (voir VOUT_DANGER_THRESHOLD,
 // src/oled_ui.cpp) : le condensateur peut encore etre charge quel que
 // soit le code.
@@ -73,13 +75,28 @@ enum TmsFault : uint8_t {
   FAULT_OVERVOLT_V1 = 6,     // V1 > 55 V
   FAULT_OVERVOLT_VOUT = 7,   // VOUT > 520 V
   FAULT_LINK_LOST = 8,       // liaison UART perdue cote TMS320
+  // VIN < 9,5V pendant ~75us, typiquement en charge elevee sur l'etage 1
+  // (l'elevateur compenserait en augmentant le rapport cyclique jusqu'a
+  // la surintensite -- le TMS320 coupe avant). Surveillance armee apres
+  // un premier franchissement de 12V, pour ne pas se declencher pendant
+  // la montee de l'alimentation au demarrage. Ajoute au firmware TMS320
+  // apres ESP32-UART.md (qui s'arrete a 8) -- voir doc/CLAUDE-esp32.md.
+  FAULT_UNDERVOLT_VIN = 9,
 };
 
-// true pour les codes verrouilles (2-7, cf. commentaire enum ci-dessus) :
-// pas d'acquittement possible, l'IHM ne doit proposer aucune commande
-// pour les effacer. false pour FAULT_NONE et les codes transitoires
-// (1, 8).
-inline bool isFaultLatched(uint8_t fault) { return fault >= 2 && fault <= 7; }
+// true pour les codes verrouilles : pas d'acquittement possible, l'IHM ne
+// doit proposer aucune commande pour les effacer. false pour FAULT_NONE
+// et les codes transitoires (1=EMUSTOP, 8=LINK_LOST).
+//
+// Ecrit comme "tout sauf les transitoires connus", plutot qu'une plage
+// explicite (ex. 2-7) : un futur code ajoute cote TMS320 (comme le 9,
+// ajoute apres coup) est verrouille par defaut au lieu de tomber
+// silencieusement en "inconnu" et de laisser l'IHM attendre indefiniment
+// un retour spontane a FAULT_NONE qui ne viendra jamais (cf.
+// doc/CLAUDE-esp32.md, bug constate sur le code 9).
+inline bool isFaultLatched(uint8_t fault) {
+  return fault != FAULT_NONE && fault != FAULT_EMUSTOP && fault != FAULT_LINK_LOST;
+}
 
 struct Telemetry {
   float freq1 = 0;  // Hz, frequence etage 1
@@ -109,9 +126,9 @@ struct CommandState {
   // TMS320). Doit rester dans la plage des le boot : une valeur par
   // defaut hors plage (ex. 0) est rejetee a chaque trame et REJ s'incremente
   // indefiniment sans jamais s'appliquer (cf. doc/esp32_agent.md, defaut
-  // constate sur cible). 35.0 = point de depart raisonnable au milieu de
-  // la plage 15-50.
-  float v1Set = 35.0f;
+  // constate sur cible). 46.0 = calibre sur mesure reelle carte V0.2
+  // (V1=44,5V releve a 50W, etage 1, doc/PROMPT-session-esp32.md).
+  float v1Set = 46.0f;
   float voutSet = 0;     // V, consigne sortie HT demandee (200-500 ou 0 = etage 2 desactive)
   // Demarre la regulation : c'est RUN, pas HT, qui arme le chemin de
   // puissance cote TMS320 (HT/HV_EN n'est consulte qu'ensuite). L'IHM doit

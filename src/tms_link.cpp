@@ -50,7 +50,7 @@ void applyField(const char *tag, float value) {
   else if (!strcmp(tag, "IOUT")) g_telemetry.iout = clampNonNegative(value);
   else if (!strcmp(tag, "FAULT")) {
     int code = (int)value;
-    if (code < 0 || code > 8) code = 0;  // code inconnu -> traite comme "pas de defaut"
+    if (code < 0 || code > 9) code = 0;  // code inconnu -> traite comme "pas de defaut"
     g_telemetry.fault = (uint8_t)code;
   }
   else if (!strcmp(tag, "STATE")) {

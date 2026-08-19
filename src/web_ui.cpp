@@ -71,7 +71,7 @@ button.on{background:var(--good);border-color:var(--good);color:#08210a}
 let state={ht:false,run:false};
 
 // Libelles FAULT (voir enum TmsFault, include/protocol.h) -- index = code.
-const FAULT_LABELS=['OK','EMUSTOP','OVERI1','OVERI2','OVERT1','OVERT2','OVERV1','OVERVOUT','LINKLOST'];
+const FAULT_LABELS=['OK','EMUSTOP','OVERI1','OVERI2','OVERT1','OVERT2','OVERV1','OVERVOUT','LINKLOST','UNDERVIN'];
 // Codes transitoires (se relevent seuls) : ne jamais basculer sur "KO" au
 // timeout de liaison tant que c'est la derniere valeur connue -- voir
 // isFaultLatched() cote firmware (include/protocol.h).
