@@ -1,9 +1,10 @@
 # CLAUDE.md — firmware ESP32-C3 (pont TMS320 ↔ IHM ↔ API HTTP)
 
 > Contexte de référence pour ce dépôt. Les documents cités (`esp32_agent.md`,
-> `tms320_agent.md`, `ESP32-UART.md`, `orchestration.md`, `mesure-cartepuissance.md`)
-> vivent dans `doc/` de ce même dépôt — ce sont la source de vérité du
-> protocole, à garder synchronisés avec le dépôt TMS320 quand celui-ci évolue.
+> `tms320_agent.md`, `ESP32-UART.md`, `orchestration.md`, `mesure-cartepuissance.md`,
+> `claudeesp32-etage2-interface.md`) vivent dans `doc/` de ce même dépôt — ce
+> sont la source de vérité du protocole, à garder synchronisés avec le dépôt
+> TMS320 quand celui-ci évolue.
 
 ---
 
@@ -79,8 +80,15 @@ $T,FAULT=0,STATE=4,REJ=0,FREQ1=200000,FREQ2=100000,DUTY1=68.4,DUTY2=0.0,VIN=12.1
 
 Trame émise, toutes les **500 ms** et immédiatement à chaque changement IHM/API :
 ```
-$C,HT=1,V1SET=35.0,VOSET=0.0,RUN=1*XX
+$C,HT=1,V1SET=50.0,VOSET=0.0,RUN=1*XX
 ```
+
+`V1SET` est **fixe à 50,0 V**, par décision de conception (pas de champ ni de
+curseur IHM) : c'est ce qui rend les 500 V de sortie atteignables (rapport
+cyclique étage 2 = `1 − V1/VOUT`, 0,90 à 50 V contre le plafond 0,95 dès que
+V1 descend vers 25 V). **Toujours l'émettre dans chaque trame** : un tag
+omis laisse le TMS320 sur sa valeur d'init (15 V), sans que `REJ` bouge ni
+qu'aucun indicateur ne le signale (détail : `doc/claudeesp32-etage2-interface.md` §3.2).
 
 Deux règles de parsing non négociables :
 
@@ -131,34 +139,29 @@ l'alimentation au démarrage.
 
 ## Chantiers ouverts côté ESP32, par priorité
 
-1. **Exposer `VOSET` dans l'IHM (web).** Bloquant pour la mise en route de
-   l'étage 2 — sans ce réglage, `VOSET` reste figé et l'étage 2 ne peut pas
-   démarrer, quel que soit l'état du câblage. Contraintes non négociables
-   (détail : `doc/PROMPT-session-esp32.md` §2) :
-   - plage 200-500 V ou exactement 0 (0 = étage 2 désactivé), refusée en bloc
-     hors plage, jamais clampée ;
-   - changer de mode **exige `RUN=0` d'abord** — l'IHM doit imposer la
-     séquence `RUN=0` → nouveau `VOSET` → `RUN=1`, pas envoyer la valeur à la
-     volée ;
-   - le TMS320 impose `VOSET_MIN=200V` (pas de démarrage doux possible) — à
-     arbitrer avec l'utilisateur avant tout essai matériel sur l'étage 2.
-2. **Réglage de `V1SET` depuis l'IHM** (champ ou curseur, plage 15-50 V,
-   envoyé à la modification). Sans lui, impossible de tracer une courbe de
-   régulation ou de rendement. `V1SET` peut changer **en marche**, sans
-   repasser par `RUN=0` : la consigne est rampée côté TMS320. Afficher `V1SP`
-   reçu à côté de la valeur demandée.
-3. **Tag `LIM`** (repliement de puissance, `0`/`1`/`2`) : à parser dès que le
+1. **Tag `LIM`** (repliement de puissance, `0`/`1`/`2`) : à parser dès que le
    TMS320 l'émettra — **pas encore implémenté côté TMS320**, renvoyer `0` en
    attendant. Ce n'est **pas** un défaut (`FAULT=0`, `STATE=4`, la régulation
    tourne) : ne pas le présenter comme une alarme, mais l'afficher en
    permanence quand il est actif. Ne pas le déduire de `VIN` : l'hystérésis sur
    le seuil de 20 V rend la valeur dépendante de l'historique.
+2. **Signaler le mode d'essai boucle ouverte étage 2** (`STAGE2_OPENLOOP_TEST`
+   côté TMS320, tant que le MOSFET de l'étage 2 n'est pas monté) : dans ce
+   mode toute consigne `VOSET` non nulle est refusée (`REJ++`, `VOSP` reste à
+   `0.0`). Pas encore un indicateur dédié — couvert pour l'instant par `REJ`
+   et par le message « étage 1 seul » qui continue de s'afficher malgré une
+   demande de palier (détail : `doc/claudeesp32-etage2-interface.md` §5).
 
 Déjà fait (ne pas refaire) : code 9 traité comme verrouillé, commande
 marche/arrêt distincte pilotant `RUN` (bouton web "Marche", indépendant de
-"HT"), `V1SET` initialisé dans la plage (46,0 V, calibré sur mesure réelle
-carte V0.2), affichage de `REJ` (OLED + web), les trois routes HTTP
-d'orchestration.
+"HT"), `V1SET` **fixe à 50,0 V** dans chaque trame (pas de champ IHM, décision
+de conception — voir plus haut), affichage de `REJ`/`V1SP`/`VOSP` (OLED pour
+REJ, web pour les trois), les trois routes HTTP d'orchestration, et
+l'exposition de `VOSET` dans le dashboard web : 4 boutons de palier (OFF/200/
+300/400, actifs uniquement à l'arrêt — `RUN=0` imposé par désactivation des
+boutons pendant la marche) + décalage fin `±10 V` (0 à +100, actif en marche,
+désactivé en mode OFF). Arithmétique entière côté JS, `VOSET` envoyé =
+palier + décalage (détail : `doc/claudeesp32-etage2-interface.md` §3.3).
 
 ## Règles d'IHM
 

@@ -34,6 +34,8 @@ h1{color:var(--ink);margin:0 0 0.1em;font-size:1.3em}
 .buttons{margin-bottom:1em}
 button{padding:10px 18px;margin:0 8px 8px 0;font-size:1em;cursor:pointer;border:1px solid var(--muted);border-radius:6px;background:var(--surface);color:var(--ink)}
 button.on{background:var(--good);border-color:var(--good);color:#08210a}
+button:disabled{opacity:0.35;cursor:not-allowed}
+.voset-offset{display:inline-block;min-width:3.5em;text-align:center;color:var(--ink2)}
 .gauges{display:grid;grid-template-columns:repeat(auto-fit,minmax(64px,1fr));gap:10px;max-width:560px}
 .gauge{background:var(--surface);border-radius:8px;padding:10px 4px 8px;display:flex;flex-direction:column;align-items:center;text-align:center}
 .gauge-label{color:var(--ink2);font-size:0.8em}
@@ -52,9 +54,23 @@ button.on{background:var(--good);border-color:var(--good);color:#08210a}
 <p class="sub">Liaison TMS320 : <span id="link">?</span></p>
 <p class="sub">Etat : <span id="fault">?</span></p>
 <p class="sub">Consignes rejetees (REJ) : <span id="rej">0</span></p>
+<p class="sub">Consigne V1 appliquee (V1SP) : <span id="v1sp">--</span> &nbsp; Consigne etage 2 appliquee (VOSP) : <span id="vosp">--</span></p>
 <div class="buttons">
 <button id="b_run" onclick="cmd('run')">Marche</button>
 <button id="b_ht" onclick="cmd('ht')">HT</button>
+</div>
+<div class="buttons">
+<!-- Etage 2 (VOSET) : palier + decalage fin, voir doc/claudeesp32-etage2-interface.md §3.3.
+     Paliers actifs seulement a l'arret (RUN=0) -- change de mode = refuse en
+     marche cote TMS320 (REJ++). Decalage +/-10V actif en marche (rampe cote
+     TMS320), desactive en mode OFF (VOSET doit rester exactement 0). -->
+<button id="b_vo_0" onclick="setPalier(0)">OFF</button>
+<button id="b_vo_200" onclick="setPalier(200)">200V</button>
+<button id="b_vo_300" onclick="setPalier(300)">300V</button>
+<button id="b_vo_400" onclick="setPalier(400)">400V</button>
+<button id="b_vo_minus" onclick="adjOffset(-10)">-10V</button>
+<span class="voset-offset" id="voset_offset">+0V</span>
+<button id="b_vo_plus" onclick="adjOffset(10)">+10V</button>
 </div>
 <div class="brightness">
 <label for="brightness">Luminosite ecran OLED</label>
@@ -68,7 +84,9 @@ button.on{background:var(--good);border-color:var(--good);color:#08210a}
 // RUN et HT sont deux commandes independantes cote TMS320 (voir
 // doc/esp32_agent.md) : RUN arme le chemin de puissance (regulation), HT
 // n'autorise HV_EN qu'ensuite, une fois RUN actif et l'etage 2 etabli.
-let state={ht:false,run:false};
+// palier/offset : decomposition du VOSET emis (voir doc/claudeesp32-etage2-
+// interface.md §3.3) -- VOSET envoye = palier + offset, arithmetique entiere.
+let state={ht:false,run:false,palier:0,offset:0};
 
 // Libelles FAULT (voir enum TmsFault, include/protocol.h) -- index = code.
 const FAULT_LABELS=['OK','EMUSTOP','OVERI1','OVERI2','OVERT1','OVERT2','OVERV1','OVERVOUT','LINKLOST','UNDERVIN'];
@@ -122,7 +140,7 @@ function updateGauges(d){
 
 function send(){
   fetch('/api/command',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},
-    body:'ht='+(state.ht?1:0)+'&run='+(state.run?1:0)});
+    body:'ht='+(state.ht?1:0)+'&run='+(state.run?1:0)+'&voutset='+(state.palier+state.offset)});
 }
 
 let brightnessBusy=false;
@@ -133,7 +151,54 @@ function setBrightness(v){
 function cmd(k){
   state[k]=!state[k];
   document.getElementById('b_'+k).className = state[k] ? 'on' : '';
+  updateVosetUI();
   send();
+}
+
+// Boutons de palier actifs seulement a l'arret : basculer VOSET de/vers 0
+// en marche est refuse par le TMS320 (REJ++). setPalier() n'est de toute
+// facon jamais appelable pendant la marche (bouton disabled), mais le garde
+// evite un envoi errone si l'etat du bouton n'a pas encore ete resynchronise.
+function setPalier(p){
+  if (state.run) return;
+  state.palier = p;
+  state.offset = 0;
+  updateVosetUI();
+  send();
+}
+
+// Decalage fin (0 a +100V par pas de 10), actif en marche (rampe cote
+// TMS320) -- mais pas en mode OFF, ou VOSET doit rester exactement 0.
+function adjOffset(delta){
+  if (state.palier === 0) return;
+  state.offset = Math.max(0, Math.min(100, state.offset + delta));
+  updateVosetUI();
+  send();
+}
+
+function updateVosetUI(){
+  const canChangePalier = !state.run;
+  for (const p of [0,200,300,400]) {
+    const btn = document.getElementById('b_vo_'+p);
+    btn.disabled = !canChangePalier;
+    btn.className = (state.palier === p) ? 'on' : '';
+  }
+  const canOffset = state.palier !== 0;
+  document.getElementById('b_vo_minus').disabled = !canOffset;
+  document.getElementById('b_vo_plus').disabled = !canOffset;
+  document.getElementById('voset_offset').textContent = '+'+state.offset+'V';
+}
+
+// Reconstruit palier/offset a partir de VOSP recu (verite TMS320) --
+// paliers volontairement en recouvrement (doc/claudeesp32-etage2-interface.md
+// §3.3), la decomposition n'est donc pas toujours unique ; on prend le
+// premier palier dont la plage [p, p+100] contient VOSP.
+function syncVoset(voutSp){
+  if (voutSp === 0) { state.palier = 0; state.offset = 0; return; }
+  for (const p of [200,300,400]) {
+    const off = Math.round(voutSp - p);
+    if (off >= 0 && off <= 100) { state.palier = p; state.offset = off; return; }
+  }
 }
 function refresh(){
   fetch('/api/state').then(r=>r.json()).then(d=>{
@@ -150,9 +215,14 @@ function refresh(){
     const rejEl = document.getElementById('rej');
     rejEl.textContent = d.rej;
     rejEl.className = d.rej > 0 ? 'fault-active' : '';
-    state = {ht:d.ht, run:d.run};
+    document.getElementById('v1sp').textContent = d.v1_sp.toFixed(1)+' V';
+    document.getElementById('vosp').textContent = d.vout_sp.toFixed(0)+' V';
+    state.ht = d.ht;
+    state.run = d.run;
     document.getElementById('b_ht').className = state.ht ? 'on' : '';
     document.getElementById('b_run').className = state.run ? 'on' : '';
+    syncVoset(d.vout_sp);
+    updateVosetUI();
     updateGauges(d);
     // vout_sp==0 = mode etage 1 seul (convention TMS320, pas une panne) --
     // voir doc/tms320_agent.md.
@@ -179,28 +249,32 @@ void handleState() {
   markActivity();
   const Telemetry &t = TmsLink::telemetry();
   const CommandState &cmd = TmsLink::command();
-  char buf[400];
+  char buf[420];
   snprintf(buf, sizeof(buf),
            "{\"link\":%s,\"vin\":%.2f,\"iin\":%.2f,\"iout\":%.2f,"
            "\"v1\":%.2f,\"i1\":%.2f,\"t1\":%.2f,"
            "\"vout\":%.2f,\"i2\":%.2f,\"t2\":%.2f,"
-           "\"ht\":%s,\"run\":%s,\"brightness\":%u,\"fault\":%u,\"vout_sp\":%.2f,\"rej\":%u}",
+           "\"ht\":%s,\"run\":%s,\"brightness\":%u,\"fault\":%u,"
+           "\"v1_sp\":%.2f,\"vout_sp\":%.2f,\"rej\":%u}",
            TmsLink::linkOk() ? "true" : "false", t.vin, t.iin, t.iout, t.v1, t.i1, t.t1,
            t.vout, t.i2, t.t2, cmd.ht ? "true" : "false", cmd.run ? "true" : "false",
-           OledUi::brightness(), t.fault, t.voutSp, t.rej);
+           OledUi::brightness(), t.fault, t.v1Sp, t.voutSp, t.rej);
   server.send(200, "application/json", buf);
 }
 
 void handleCommand() {
   markActivity();
-  // Dashboard simple : pilote HT et RUN, deux commandes independantes
-  // cote TMS320 (voir doc/esp32_agent.md) -- RUN arme le chemin de
-  // puissance, HT n'autorise HV_EN qu'ensuite (RUN actif + etage 2
-  // etabli). v1Set/voutSet restent geres par /api/setpoint, pas par ce
-  // dashboard.
+  // Dashboard simple : pilote HT, RUN et VOSET (palier+decalage compose
+  // cote JS, voir INDEX_HTML). v1Set n'est jamais touche ici : fixe a 50.0
+  // par decision de conception (voir protocol.h, CommandState::v1Set) --
+  // seul /api/setpoint (orchestration externe) peut le faire varier.
+  // Le sequencement RUN=0 -> VOSET -> RUN=1 est impose cote IHM (boutons
+  // de palier desactives pendant la marche, voir setPalier() en JS) ;
+  // l'ESP32 ne le revalide pas ici, seul le TMS320 en est juge.
   CommandState cmd = TmsLink::command();
   cmd.ht = server.arg("ht") == "1";
   cmd.run = server.arg("run") == "1";
+  if (server.hasArg("voutset")) cmd.voutSet = server.arg("voutset").toFloat();
   TmsLink::setCommand(cmd);
   server.send(200, "text/plain", "OK");
 }

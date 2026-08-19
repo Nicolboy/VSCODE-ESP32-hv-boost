@@ -123,12 +123,17 @@ struct Telemetry {
 struct CommandState {
   bool ht = false;        // autorise HV_EN -- sans effet tant que RUN=0 ou etage 2 non etabli
   // V, consigne tension intermediaire demandee (15-50, validee par le
-  // TMS320). Doit rester dans la plage des le boot : une valeur par
-  // defaut hors plage (ex. 0) est rejetee a chaque trame et REJ s'incremente
-  // indefiniment sans jamais s'appliquer (cf. doc/esp32_agent.md, defaut
-  // constate sur cible). 46.0 = calibre sur mesure reelle carte V0.2
-  // (V1=44,5V releve a 50W, etage 1, doc/PROMPT-session-esp32.md).
-  float v1Set = 46.0f;
+  // TMS320). FIXE A 50.0 PAR DECISION DE CONCEPTION -- ne jamais exposer de
+  // champ/curseur IHM dessus (voir doc/claudeesp32-etage2-interface.md
+  // §3.2) : 50V est ce qui rend les 500V de sortie atteignables (rapport
+  // cyclique etage 2 = 1-V1/VOUT, 0.90 a 50V contre le plafond 0.95 des
+  // que V1 descend vers 25V). Doit rester dans la plage des le boot (une
+  // valeur hors plage, ex. 0, est rejetee a chaque trame et REJ
+  // s'incremente indefiniment sans jamais s'appliquer, defaut constate sur
+  // cible -- cf. doc/esp32_agent.md) et etre emise dans CHAQUE trame $C :
+  // un tag omis laisse le TMS320 sur sa valeur d'init (15V), sans que REJ
+  // bouge ni qu'aucun indicateur ne le signale.
+  float v1Set = 50.0f;
   float voutSet = 0;     // V, consigne sortie HT demandee (200-500 ou 0 = etage 2 desactive)
   // Demarre la regulation : c'est RUN, pas HT, qui arme le chemin de
   // puissance cote TMS320 (HT/HV_EN n'est consulte qu'ensuite). L'IHM doit
