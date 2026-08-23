@@ -53,6 +53,7 @@ button:disabled{opacity:0.35;cursor:not-allowed}
 <h1>AlimHT</h1>
 <p class="sub">Liaison TMS320 : <span id="link">?</span></p>
 <p class="sub">Etat : <span id="fault">?</span></p>
+<p class="sub">Regulation (STATE) : <span id="state">?</span></p>
 <p class="sub">Consignes rejetees (REJ) : <span id="rej">0</span></p>
 <p class="sub">Consigne V1 appliquee (V1SP) : <span id="v1sp">--</span> &nbsp; Consigne etage 2 appliquee (VOSP) : <span id="vosp">--</span></p>
 <div class="buttons">
@@ -95,16 +96,34 @@ const FAULT_LABELS=['OK','EMUSTOP','OVERI1','OVERI2','OVERT1','OVERT2','OVERV1',
 // isFaultLatched() cote firmware (include/protocol.h).
 const FAULT_TRANSIENT=[1,8];
 
+// Libelles STATE (machine a etats regulation TMS320, voir doc/tms320_agent.md)
+// -- index = code. Seule distinction observable entre "etage 1 seul" (0->1->4)
+// et "etage 2 engage" (0->1->2->3->4) : c'est ce qui fonde les criteres de
+// recette de doc/claudeesp32-etage2-interface.md.
+const STATE_LABELS=['IDLE','START_S1','RUN_S1','START_S2','RUN'];
+
 // Plages d'affichage (voir doc/ESP32-UART.md) -- alignees sur les bornes
 // des bargraphs OLED (src/oled_ui.cpp), pas la pleine echelle ADC.
+// Bornes calees sur les seuils de coupure (CTRL_V1_OV_TRIP_V=82,
+// SAFETY_ISHUNT_THRESHOLD_A=4.0), pas sur les consignes -- sinon la jauge
+// V1 affiche 100% (rouge) en marche normale des lors que V1SET=75 fixe
+// (voir protocol.h::CommandState::v1Set, relance du 26/08/2026).
+// vout min=0 (pas 200) : sous 200V la sortie vaut ~V_inter pendant la
+// montee de l'etage 2, la jauge doit rester lisible a ce moment-la. iout
+// max=150mA : chaine de mesure redimensionnee cote materiel (pleine
+// echelle reelle 172mA, domaine retenu 150mA/200V-100mA/500V) -- a 50mA
+// la jauge saturait au tiers de l'usage normal. i2 volontairement laisse
+// a 3A (asymetrique avec i1) : etage 2 sous tension d'entree bien plus
+// elevee, donc courant structurellement plus faible -- 0-3A y donne une
+// resolution utile (doc/claudeesp32-etage2-interface.md, retour materiel).
 const GAUGES=[
   {key:'vin',  label:'Vin',  unit:'V',  min:0,   max:25,  dec:1},
   {key:'iin',  label:'Iin',  unit:'A',  min:0,   max:3,   dec:2},
-  {key:'v1',   label:'V1 (inter)', unit:'V', min:0, max:50, dec:1},
-  {key:'i1',   label:'I1',  unit:'A',  min:0,   max:3,   dec:2},
-  {key:'vout', label:'Vout', unit:'V', min:200, max:500, dec:0},
+  {key:'v1',   label:'V1 (inter)', unit:'V', min:0, max:82, dec:1},
+  {key:'i1',   label:'I1',  unit:'A',  min:0,   max:4,   dec:2},
+  {key:'vout', label:'Vout', unit:'V', min:0, max:500, dec:0},
   {key:'i2',   label:'I2',  unit:'A',  min:0,   max:3,   dec:2},
-  {key:'iout', label:'Iout', unit:'mA', min:0,  max:50,  dec:1, scale:1000},
+  {key:'iout', label:'Iout', unit:'mA', min:0,  max:150, dec:1, scale:1000},
 ];
 
 function buildGauges(){
@@ -191,11 +210,19 @@ function updateVosetUI(){
 
 // Reconstruit palier/offset a partir de VOSP recu (verite TMS320) --
 // paliers volontairement en recouvrement (doc/claudeesp32-etage2-interface.md
-// §3.3), la decomposition n'est donc pas toujours unique ; on prend le
-// premier palier dont la plage [p, p+100] contient VOSP.
+// §3.3), la decomposition n'est donc pas toujours unique. On garde le palier
+// courant tant qu'il reste cohere avec VOSP (sinon le bouton qu'on vient de
+// presser s'eteindrait tout seul au refresh suivant : ex. presser 300V donne
+// VOSP=300, une boucle croissante 200/300/400 retomberait sur 200+100 et
+// rallumerait le bouton 200V a la place). En repli, balaie du plus haut au
+// plus bas palier, ce qui donne le decalage le plus petit -- la lecture la
+// plus naturelle. VOSP reste la verite : seule la decomposition change,
+// jamais la valeur affichee ni celle envoyee.
 function syncVoset(voutSp){
   if (voutSp === 0) { state.palier = 0; state.offset = 0; return; }
-  for (const p of [200,300,400]) {
+  const keep = Math.round(voutSp - state.palier);
+  if (state.palier !== 0 && keep >= 0 && keep <= 100) { state.offset = keep; return; }
+  for (const p of [400,300,200]) {
     const off = Math.round(voutSp - p);
     if (off >= 0 && off <= 100) { state.palier = p; state.offset = off; return; }
   }
@@ -217,6 +244,10 @@ function refresh(){
     rejEl.className = d.rej > 0 ? 'fault-active' : '';
     document.getElementById('v1sp').textContent = d.v1_sp.toFixed(1)+' V';
     document.getElementById('vosp').textContent = d.vout_sp.toFixed(0)+' V';
+    // DUTY2 a cote de STATE : second temoin que l'etage 2 travaille
+    // reellement (voir doc/claudeesp32-etage2-interface.md, retour materiel).
+    document.getElementById('state').textContent =
+      (STATE_LABELS[d.state] || ('CODE '+d.state))+' ('+d.state+') — DUTY2 '+d.duty2.toFixed(1)+'%';
     state.ht = d.ht;
     state.run = d.run;
     document.getElementById('b_ht').className = state.ht ? 'on' : '';
@@ -249,24 +280,24 @@ void handleState() {
   markActivity();
   const Telemetry &t = TmsLink::telemetry();
   const CommandState &cmd = TmsLink::command();
-  char buf[420];
+  char buf[460];
   snprintf(buf, sizeof(buf),
            "{\"link\":%s,\"vin\":%.2f,\"iin\":%.2f,\"iout\":%.2f,"
            "\"v1\":%.2f,\"i1\":%.2f,\"t1\":%.2f,"
-           "\"vout\":%.2f,\"i2\":%.2f,\"t2\":%.2f,"
-           "\"ht\":%s,\"run\":%s,\"brightness\":%u,\"fault\":%u,"
+           "\"vout\":%.2f,\"i2\":%.2f,\"t2\":%.2f,\"duty2\":%.2f,"
+           "\"ht\":%s,\"run\":%s,\"brightness\":%u,\"fault\":%u,\"state\":%u,"
            "\"v1_sp\":%.2f,\"vout_sp\":%.2f,\"rej\":%u}",
            TmsLink::linkOk() ? "true" : "false", t.vin, t.iin, t.iout, t.v1, t.i1, t.t1,
-           t.vout, t.i2, t.t2, cmd.ht ? "true" : "false", cmd.run ? "true" : "false",
-           OledUi::brightness(), t.fault, t.v1Sp, t.voutSp, t.rej);
+           t.vout, t.i2, t.t2, t.duty2, cmd.ht ? "true" : "false", cmd.run ? "true" : "false",
+           OledUi::brightness(), t.fault, t.state, t.v1Sp, t.voutSp, t.rej);
   server.send(200, "application/json", buf);
 }
 
 void handleCommand() {
   markActivity();
   // Dashboard simple : pilote HT, RUN et VOSET (palier+decalage compose
-  // cote JS, voir INDEX_HTML). v1Set n'est jamais touche ici : fixe a 50.0
-  // par decision de conception (voir protocol.h, CommandState::v1Set) --
+  // cote JS, voir INDEX_HTML). v1Set n'est jamais touche ici : fixe par
+  // decision de conception (voir protocol.h, CommandState::v1Set) --
   // seul /api/setpoint (orchestration externe) peut le faire varier.
   // Le sequencement RUN=0 -> VOSET -> RUN=1 est impose cote IHM (boutons
   // de palier desactives pendant la marche, voir setPalier() en JS) ;

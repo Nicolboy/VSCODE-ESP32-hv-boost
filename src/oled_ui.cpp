@@ -138,7 +138,11 @@ void showSplash() {
 const float VIN_MIN = 0.0f,    VIN_MAX = 25.0f;
 const float IIN_MIN = 0.0f,    IIN_MAX = 3.0f;
 const float VOUT_MIN = 200.0f, VOUT_MAX = 500.0f;
-const float IOUT_MIN = 0.0f,   IOUT_MAX = 0.050f;  // 50 mA
+// 150 mA : chaine de mesure redimensionnee cote materiel (shunt 10->1 Ohm,
+// gain 1.5k->4.7k), pleine echelle reelle 172mA, domaine retenu 150mA/200V
+// (voir doc/claudeesp32-etage2-interface.md, meme correction que la jauge
+// web -- a 50mA la jauge saturait au tiers de l'usage normal).
+const float IOUT_MIN = 0.0f,   IOUT_MAX = 0.150f;  // 150 mA
 const float PWR_MIN = 0.0f,    PWR_MAX = 30.0f;    // W, PIN/POUT
 const float RDT_MIN = 50.0f,   RDT_MAX = 100.0f;   // %, rendement
 
@@ -447,7 +451,7 @@ void drawDashboard(const Telemetry &t, bool linkOk) {
   u8g2.drawStr(COL1_X + 30, BAR_Y + BAR_H + 4, buf);
   snprintf(buf, sizeof(buf), "%.0fV", voutDisp);
   u8g2.drawStr(COL1_X + 56, BAR_Y + BAR_H + 4, buf);
-  snprintf(buf, sizeof(buf), "%.0fmA", ioutDisp * 1000.0f);
+  snprintf(buf, sizeof(buf), "%03.0fmA", ioutDisp * 1000.0f);  // 3 digits (0-150)
   u8g2.drawStr(COL1_X + 83, BAR_Y + BAR_H + 4, buf);
 
   u8g2.drawVLine(COL1_COL2_DIVIDER_X, BAR_Y - 6, BAR_H + 20);

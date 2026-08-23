@@ -176,6 +176,13 @@ char g_lastFrame[64] = "";
 
 void sendCommandFrame() {
   char body[64];
+  // V1SET DOIT figurer dans CETTE trame, et dans toutes les suivantes --
+  // ne jamais le rendre conditionnel/optionnel dans un futur refactor.
+  // Un tag absent laisse le TMS320 sur sa derniere valeur, et sa valeur
+  // d'initialisation est 15V (au lieu des 50V fixes attendus, voir
+  // protocol.h::CommandState::v1Set) : la panne serait silencieuse,
+  // alimentation a 15V au lieu de 50, sans que REJ bouge (cf.
+  // doc/claudeesp32-etage2-interface.md §3.2).
   int n = snprintf(body, sizeof(body), "C,HT=%d,V1SET=%.1f,VOSET=%.1f,RUN=%d",
                     g_command.ht ? 1 : 0, g_command.v1Set, g_command.voutSet,
                     g_command.run ? 1 : 0);

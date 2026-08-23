@@ -80,13 +80,16 @@ $T,FAULT=0,STATE=4,REJ=0,FREQ1=200000,FREQ2=100000,DUTY1=68.4,DUTY2=0.0,VIN=12.1
 
 Trame émise, toutes les **500 ms** et immédiatement à chaque changement IHM/API :
 ```
-$C,HT=1,V1SET=50.0,VOSET=0.0,RUN=1*XX
+$C,HT=1,V1SET=75.0,VOSET=0.0,RUN=1*XX
 ```
 
-`V1SET` est **fixe à 50,0 V**, par décision de conception (pas de champ ni de
-curseur IHM) : c'est ce qui rend les 500 V de sortie atteignables (rapport
-cyclique étage 2 = `1 − V1/VOUT`, 0,90 à 50 V contre le plafond 0,95 dès que
-V1 descend vers 25 V). **Toujours l'émettre dans chaque trame** : un tag
+`V1SET` est **fixe à 75,0 V** (relevé du 26/08/2026, ancienne valeur 50,0 V),
+par décision de conception (pas de champ ni de curseur IHM) : rapport
+cyclique étage 2 = `1 − V1/VOUT`, soit 0,85 à 75 V pour VOUT=500 V, sous le
+plafond 0,95. Seuil de coupure survoltage V1 côté TMS320
+(`CTRL_V1_OV_TRIP_V`) : **82 V** — la jauge V1 du dashboard web est calée
+dessus, pas sur la consigne, pour ne pas rester bloquée à 100 % (rouge) en
+marche normale. **Toujours émettre `V1SET` dans chaque trame** : un tag
 omis laisse le TMS320 sur sa valeur d'init (15 V), sans que `REJ` bouge ni
 qu'aucun indicateur ne le signale (détail : `doc/claudeesp32-etage2-interface.md` §3.2).
 
@@ -154,7 +157,7 @@ l'alimentation au démarrage.
 
 Déjà fait (ne pas refaire) : code 9 traité comme verrouillé, commande
 marche/arrêt distincte pilotant `RUN` (bouton web "Marche", indépendant de
-"HT"), `V1SET` **fixe à 50,0 V** dans chaque trame (pas de champ IHM, décision
+"HT"), `V1SET` **fixe à 75,0 V** dans chaque trame (pas de champ IHM, décision
 de conception — voir plus haut), affichage de `REJ`/`V1SP`/`VOSP` (OLED pour
 REJ, web pour les trois), les trois routes HTTP d'orchestration, et
 l'exposition de `VOSET` dans le dashboard web : 4 boutons de palier (OFF/200/
