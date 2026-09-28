@@ -18,7 +18,7 @@ Un ESP32-C3 qui fait **trois choses et rien d'autre** :
    orchestrateur externe.
 
 Il pilote une alimentation élévatrice **deux étages en cascade** (V_inter
-15-50 V, puis sortie HT 200-500 V).
+50-100 V, puis sortie HT 200-500 V).
 
 ## Règle numéro un : l'ESP32 n'a AUCUNE responsabilité de sécurité
 
