@@ -2,8 +2,8 @@
 
 L'IHM OLED (`src/oled_ui.cpp`) utilise la librairie u8g2
 (`U8G2_SSD1322_NHD_256X64_F_4W_HW_SPI`) depuis la migration du driver
-maison (conserve dans `legacy/er_oled.cpp` / `legacy/er_oled.h` pour
-reference, non compile).
+maison (adapte du tutoriel constructeur, retire du depot avant
+publication -- voir `doc/references.md`).
 
 ## SPI matériel sur broches personnalisees
 

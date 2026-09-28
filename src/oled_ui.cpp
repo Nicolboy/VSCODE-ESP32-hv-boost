@@ -27,7 +27,7 @@ namespace {
 // correspondait pas au cablage de notre panneau (image coupee en deux
 // moities gauche/droite inversees + miroir horizontal) ; corrige dans
 // begin() en reappliquant le registre remap connu-fonctionnel de
-// l'ancien driver maison (voir legacy/er_oled.cpp).
+// l'ancien driver maison (retire du depot, voir doc/references.md).
 U8G2_SSD1322_NHD_256X64_F_4W_HW_SPI u8g2(
     U8G2_R0,
     /* cs=*/ PIN_OLED_CS,
@@ -546,7 +546,7 @@ void begin() {
   u8g2.begin();
 
   // Re-applique le registre "Set Re-map / Dual COM Line Mode" (0xA0) tel
-  // que valide sur l'ancien driver maison (legacy/er_oled.cpp) : COM
+  // que valide sur l'ancien driver maison (retire du depot) : COM
   // remap + nibble remap actives, column remap desactive. Le remap par
   // defaut d'u8g2 pour ce controleur ne correspond pas au cablage de ce
   // panneau (image en miroir horizontal sinon).
