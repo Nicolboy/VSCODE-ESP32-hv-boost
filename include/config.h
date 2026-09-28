@@ -26,5 +26,6 @@
 
 // WiFi/serveur web de l'IHM : l'ESP32 cree son propre point d'acces
 // (mode AP), pas de dependance a un reseau local existant.
-#define WIFI_AP_SSID     "HIVY"
-#define WIFI_AP_PASSWORD "REDACTED_WIFI_PASSWORD"
+// SSID et mot de passe dans credentials.h (jamais versionne) -- copier
+// include/credentials.h.example vers include/credentials.h et l'adapter.
+#include "credentials.h"

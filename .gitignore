@@ -1,7 +1,12 @@
 .pio
-.vscode/.browse.c_cpp.db*
-.vscode/c_cpp_properties.json
-.vscode/launch.json
-.vscode/ipch
+.vscode/
+.claude/
 desktop.ini
 _desktop.ini
+
+# Secrets
+include/credentials.h
+
+# Datasheets et docs constructeur : sous copyright, non redistribuables.
+# Voir docs/references.md pour les references et liens de telechargement.
+*.pdf
