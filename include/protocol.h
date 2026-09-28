@@ -123,19 +123,22 @@ struct Telemetry {
 struct CommandState {
   bool ht = false;        // autorise HV_EN -- sans effet tant que RUN=0 ou etage 2 non etabli
   // V, consigne tension intermediaire demandee, validee par le TMS320.
-  // FIXE A 75.0 PAR DECISION DE CONCEPTION (releve du 26/08/2026, ancienne
-  // valeur 50.0) -- ne jamais exposer de champ/curseur IHM dessus (voir
+  // CONSTANTE FIRMWARE, PLAGE 50-100V (releve du 28/09/2026, valeur
+  // courante 70.0 ; anciennes valeurs 50.0 puis 75.0 fixe) -- ne jamais
+  // exposer de champ/curseur IHM dessus (voir
   // doc/claudeesp32-etage2-interface.md §3.2) : rapport cyclique etage 2 =
-  // 1-V1/VOUT, soit 0.85 a 75V pour VOUT=500V, sous le plafond 0.95. Doit
-  // rester dans la plage acceptee par le TMS320 des le boot (une valeur
-  // hors plage, ex. 0, est rejetee a chaque trame et REJ s'incremente
-  // indefiniment sans jamais s'appliquer, defaut constate sur cible -- cf.
+  // 1-V1/VOUT, soit 0.86 a 70V pour VOUT=500V, sous le plafond 0.95.
+  // ATTENTION : le haut de la plage (au-dela d'environ 82V) declenche le
+  // FAULT verrouille de survoltage V1 cote TMS320 (CTRL_V1_OV_TRIP_V) --
+  // verifier ce seuil avant de choisir une valeur haute. Doit rester dans
+  // la plage acceptee par le TMS320 des le boot (une valeur hors plage,
+  // ex. 0, est rejetee a chaque trame et REJ s'incremente indefiniment
+  // sans jamais s'appliquer, defaut constate sur cible -- cf.
   // doc/esp32_agent.md) et etre emise dans CHAQUE trame $C : un tag omis
   // laisse le TMS320 sur sa valeur d'init (15V), sans que REJ bouge ni
-  // qu'aucun indicateur ne le signale. Seuil de coupure survoltage V1
-  // cote TMS320 (CTRL_V1_OV_TRIP_V) : 82V -- voir la jauge V1 web
-  // (src/web_ui.cpp), calee dessus et non sur la consigne.
-  float v1Set = 75.0f;
+  // qu'aucun indicateur ne le signale. La jauge V1 web (src/web_ui.cpp)
+  // est calee sur le seuil 82V, pas sur la consigne.
+  float v1Set = 70.0f;
   float voutSet = 0;     // V, consigne sortie HT demandee (200-500 ou 0 = etage 2 desactive)
   // Demarre la regulation : c'est RUN, pas HT, qui arme le chemin de
   // puissance cote TMS320 (HT/HV_EN n'est consulte qu'ensuite). L'IHM doit

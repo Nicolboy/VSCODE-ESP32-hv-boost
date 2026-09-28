@@ -28,7 +28,7 @@ trame `$T` annonce un défaut, la coupure a déjà eu lieu.
 
 Conséquences directes, à ne jamais contourner :
 
-- **Ne pas dupliquer les bornes physiques** (`V1SET` 15-50 V, `VOSET`
+- **Ne pas dupliquer les bornes physiques** (`V1SET` 50-100 V, `VOSET`
   200-500 V ou 0). L'ESP32 relaie, il ne valide pas. Le TMS320 rejette
   lui-même et incrémente `REJ`. Deux jeux de bornes finiront par diverger.
 - **Ne rien recalculer localement** qui existe déjà en télémétrie (`LIM`,
@@ -80,18 +80,28 @@ $T,FAULT=0,STATE=4,REJ=0,FREQ1=200000,FREQ2=100000,DUTY1=68.4,DUTY2=0.0,VIN=12.1
 
 Trame émise, toutes les **500 ms** et immédiatement à chaque changement IHM/API :
 ```
-$C,HT=1,V1SET=75.0,VOSET=0.0,RUN=1*XX
+$C,HT=1,V1SET=70.0,VOSET=0.0,RUN=1*XX
 ```
 
-`V1SET` est **fixe à 75,0 V** (relevé du 26/08/2026, ancienne valeur 50,0 V),
-par décision de conception (pas de champ ni de curseur IHM) : rapport
-cyclique étage 2 = `1 − V1/VOUT`, soit 0,85 à 75 V pour VOUT=500 V, sous le
-plafond 0,95. Seuil de coupure survoltage V1 côté TMS320
-(`CTRL_V1_OV_TRIP_V`) : **82 V** — la jauge V1 du dashboard web est calée
-dessus, pas sur la consigne, pour ne pas rester bloquée à 100 % (rouge) en
-marche normale. **Toujours émettre `V1SET` dans chaque trame** : un tag
-omis laisse le TMS320 sur sa valeur d'init (15 V), sans que `REJ` bouge ni
-qu'aucun indicateur ne le signale (détail : `doc/claudeesp32-etage2-interface.md` §3.2).
+`V1SET` est une **constante de firmware, plage 50-100 V** (valeur courante :
+**70,0 V**, relevé du 28/09/2026 ; anciennes valeurs : 50,0 V puis 75,0 V
+fixe) — toujours pas de champ ni de curseur IHM, c'est un réglage qu'on
+change dans `include/protocol.h` et qu'on recompile, pas un paramètre
+opérateur. Rapport cyclique étage 2 = `1 − V1/VOUT`, soit 0,86 à 70 V pour
+VOUT=500 V, sous le plafond 0,95.
+
+⚠️ **Le haut de la plage (au-delà d'environ 82 V) est en pratique
+inatteignable** : le seuil de coupure survoltage V1 côté TMS320
+(`CTRL_V1_OV_TRIP_V`) est documenté à **82 V**, et le déclenchement est un
+`FAULT` **verrouillé** (§ Codes `FAULT` plus bas) — un cycle d'alimentation
+TMS320 est alors nécessaire pour repartir. Vérifier ce seuil côté TMS320
+avant de choisir une valeur dans le haut de la plage 50-100 V. La jauge V1
+du dashboard web est calée sur ce seuil de 82 V, pas sur la consigne, pour
+ne pas rester bloquée à 100 % (rouge) en marche normale.
+
+**Toujours émettre `V1SET` dans chaque trame** : un tag omis laisse le
+TMS320 sur sa valeur d'init (15 V), sans que `REJ` bouge ni qu'aucun
+indicateur ne le signale (détail : `doc/claudeesp32-etage2-interface.md` §3.2).
 
 Deux règles de parsing non négociables :
 
@@ -157,8 +167,8 @@ l'alimentation au démarrage.
 
 Déjà fait (ne pas refaire) : code 9 traité comme verrouillé, commande
 marche/arrêt distincte pilotant `RUN` (bouton web "Marche", indépendant de
-"HT"), `V1SET` **fixe à 75,0 V** dans chaque trame (pas de champ IHM, décision
-de conception — voir plus haut), affichage de `REJ`/`V1SP`/`VOSP` (OLED pour
+"HT"), `V1SET` **constante firmware à 70,0 V** dans chaque trame (plage
+50-100 V, pas de champ IHM — voir plus haut), affichage de `REJ`/`V1SP`/`VOSP` (OLED pour
 REJ, web pour les trois), les trois routes HTTP d'orchestration, et
 l'exposition de `VOSET` dans le dashboard web : 4 boutons de palier (OFF/200/
 300/400, actifs uniquement à l'arrêt — `RUN=0` imposé par désactivation des
