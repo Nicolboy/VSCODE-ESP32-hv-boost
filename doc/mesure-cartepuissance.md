@@ -4,7 +4,8 @@ Suivi des mesures de calibration effectuées sur la carte élévateur (à moiti�
 complète : composants de puissance et drivers MOSFET pas encore montés).
 Ce document est la source pour remplir `calib.h` dans le firmware. Les
 valeurs numériques finales à utiliser en code sont dans
-`PROMPT-claude-code-TMS320.md` (section 5) ; ce fichier-ci garde la trace
+`journal-20260801-amorcage-firmware.md` (section 5, dépôt
+`TMS320F28027-dualboost/docs/`) ; ce fichier-ci garde la trace
 des mesures brutes et de leur contexte.
 
 ---
