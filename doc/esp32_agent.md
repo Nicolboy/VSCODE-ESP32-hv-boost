@@ -62,7 +62,7 @@ $C,HT=1,V1SET=35.0,VOSET=400.0,RUN=1*XX
 
 Tags disponibles : `HT`, `PWM1`/`PWM2` (acceptés côté TMS320 mais sans
 effet — la régulation pilote les étages elle-même, ne pas s'appuyer
-dessus), `V1SET` (15-50 V), `VOSET` (200-500 V **ou 0**), `RUN`.
+dessus), `V1SET` (15-77 V), `VOSET` (200-500 V **ou 0**), `RUN`.
 
 Envoi toutes les **500 ms**, et immédiatement à chaque changement depuis
 l'IHM (OLED/web) ou un appel de l'API HTTP décrite plus bas.
@@ -91,7 +91,7 @@ de toute façon **sans aucun effet** : `HV_EN` exige que l'étage 2 soit
 actif. Le seul bouton utile aujourd'hui est celui qui n'existe pas.
 
 **`V1SET=0.0` est hors plage et refusé à chaque trame.** La plage est 15 à
-50 V. Le TMS320 refuse la consigne en bloc, conserve la précédente, et
+77 V. Le TMS320 refuse la consigne en bloc, conserve la précédente, et
 incrémente `REJ` — observé à 5 et croissant d'une unité par trame. La
 consigne réellement appliquée restait donc à 15,0 V, sa valeur
 d'initialisation côté TMS320, et non celle affichée à l'écran. `V1SET`

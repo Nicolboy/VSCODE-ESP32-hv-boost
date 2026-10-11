@@ -1,7 +1,7 @@
 # ESP32-C3 dualboost — pont TMS320 ↔ IHM ↔ API HTTP
 
 Firmware ESP32-C3 pour une alimentation élévatrice deux étages en cascade
-(étage 1 : V_inter 50-100 V, étage 2 : sortie HT 200-500 V), régulée par un
+(étage 1 : V_inter 15-77 V, étage 2 : sortie HT 200-500 V), régulée par un
 TMS320F28027 côté puissance.
 
 Ce firmware fait **trois choses et rien d'autre** :

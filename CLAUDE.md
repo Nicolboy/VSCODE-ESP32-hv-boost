@@ -18,7 +18,7 @@ Un ESP32-C3 qui fait **trois choses et rien d'autre** :
    orchestrateur externe.
 
 Il pilote une alimentation élévatrice **deux étages en cascade** (V_inter
-50-100 V, puis sortie HT 200-500 V).
+15-77 V, puis sortie HT 200-500 V).
 
 ## Règle numéro un : l'ESP32 n'a AUCUNE responsabilité de sécurité
 
@@ -28,7 +28,7 @@ trame `$T` annonce un défaut, la coupure a déjà eu lieu.
 
 Conséquences directes, à ne jamais contourner :
 
-- **Ne pas dupliquer les bornes physiques** (`V1SET` 50-100 V, `VOSET`
+- **Ne pas dupliquer les bornes physiques** (`V1SET` 15-77 V, `VOSET`
   200-500 V ou 0). L'ESP32 relaie, il ne valide pas. Le TMS320 rejette
   lui-même et incrémente `REJ`. Deux jeux de bornes finiront par diverger.
 - **Ne rien recalculer localement** qui existe déjà en télémétrie (`LIM`,
@@ -83,9 +83,11 @@ Trame émise, toutes les **500 ms** et immédiatement à chaque changement IHM/A
 $C,HT=1,V1SET=70.0,VOSET=0.0,RUN=1*XX
 ```
 
-`V1SET` est une **constante de firmware, plage 50-100 V** (valeur courante :
-**70,0 V**, relevé du 28/09/2026 ; anciennes valeurs : 50,0 V puis 75,0 V
-fixe) — toujours pas de champ ni de curseur IHM, c'est un réglage qu'on
+`V1SET` est une **constante de firmware, plage de validation 15-77 V**
+(`CTRL_V1_SET_MIN_V`/`CTRL_V1_SET_MAX_V`, `src/calib.h` côté TMS320 ;
+77 = 75 + 2 V de marge flottante, pas une borne opérationnelle) — valeur
+courante : **70,0 V**, relevé du 28/09/2026 ; anciennes valeurs : 50,0 V
+puis 75,0 V fixe — toujours pas de champ ni de curseur IHM, c'est un réglage qu'on
 change dans `include/protocol.h` et qu'on recompile, pas un paramètre
 opérateur. Rapport cyclique étage 2 = `1 − V1/VOUT`, soit 0,86 à 70 V pour
 VOUT=500 V, sous le plafond 0,95.
@@ -95,7 +97,7 @@ inatteignable** : le seuil de coupure survoltage V1 côté TMS320
 (`CTRL_V1_OV_TRIP_V`) est documenté à **82 V**, et le déclenchement est un
 `FAULT` **verrouillé** (§ Codes `FAULT` plus bas) — un cycle d'alimentation
 TMS320 est alors nécessaire pour repartir. Vérifier ce seuil côté TMS320
-avant de choisir une valeur dans le haut de la plage 50-100 V. La jauge V1
+avant de choisir une valeur dans le haut de la plage 15-77 V. La jauge V1
 du dashboard web est calée sur ce seuil de 82 V, pas sur la consigne, pour
 ne pas rester bloquée à 100 % (rouge) en marche normale.
 
@@ -167,8 +169,8 @@ l'alimentation au démarrage.
 
 Déjà fait (ne pas refaire) : code 9 traité comme verrouillé, commande
 marche/arrêt distincte pilotant `RUN` (bouton web "Marche", indépendant de
-"HT"), `V1SET` **constante firmware à 70,0 V** dans chaque trame (plage
-50-100 V, pas de champ IHM — voir plus haut), affichage de `REJ`/`V1SP`/`VOSP` (OLED pour
+"HT"), `V1SET` **constante firmware à 70,0 V** dans chaque trame (plage de
+validation 15-77 V, pas de champ IHM — voir plus haut), affichage de `REJ`/`V1SP`/`VOSP` (OLED pour
 REJ, web pour les trois), les trois routes HTTP d'orchestration, et
 l'exposition de `VOSET` dans le dashboard web : 4 boutons de palier (OFF/200/
 300/400, actifs uniquement à l'arrêt — `RUN=0` imposé par désactivation des

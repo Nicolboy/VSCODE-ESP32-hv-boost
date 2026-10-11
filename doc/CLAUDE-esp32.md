@@ -18,7 +18,7 @@ Un ESP32-C3 qui fait **trois choses et rien d'autre** :
    orchestrateur externe.
 
 Il pilote une alimentation élévatrice **deux étages en cascade** (V_inter
-15-50 V, puis sortie HT 200-500 V).
+15-77 V, puis sortie HT 200-500 V).
 
 ## Règle numéro un : l'ESP32 n'a AUCUNE responsabilité de sécurité
 
@@ -28,7 +28,7 @@ trame `$T` annonce un défaut, la coupure a déjà eu lieu.
 
 Conséquences directes, à ne jamais contourner :
 
-- **Ne pas dupliquer les bornes physiques** (`V1SET` 15-50 V, `VOSET`
+- **Ne pas dupliquer les bornes physiques** (`V1SET` 15-77 V, `VOSET`
   200-500 V ou 0). L'ESP32 relaie, il ne valide pas. Le TMS320 rejette
   lui-même et incrémente `REJ`. Deux jeux de bornes finiront par diverger.
 - **Ne rien recalculer localement** qui existe déjà en télémétrie (`LIM`,
@@ -145,7 +145,7 @@ l'alimentation au démarrage.
    affiché à l'écran n'est pas ce qui est appliqué — exactement le cas de
    figure qui rend un dysfonctionnement indéchiffrable. Le comparer à
    `V1SP`/`VOSP` dit laquelle des consignes a été refusée.
-5. **Réglage de `V1SET` depuis l'IHM** (champ ou curseur, plage 15-50 V,
+5. **Réglage de `V1SET` depuis l'IHM** (champ ou curseur, plage 15-77 V,
    envoyé à la modification). Sans lui, impossible de tracer une courbe de
    régulation ou de rendement. `V1SET` peut changer **en marche**, sans
    repasser par `RUN=0` : la consigne est rampée côté TMS320. Afficher `V1SP`
