@@ -17,7 +17,9 @@ const Telemetry &telemetry();
 const CommandState &command();
 
 // true si une trame de telemetrie valide (checksum OK) a ete recue
-// recemment (ou si on est en mode simulation).
+// recemment (ou si on est en mode simulation). Seule source du timeout de
+// liaison (2s) : oled_ui.cpp ("TMS:KO") et web_ui.cpp (link_ok/age_ms) s'y
+// referent, ne pas reimplementer ce calcul ailleurs.
 bool linkOk();
 
 // Derniere trame $C envoyee telle quelle (ex. "$C,HT=1,V1SET=35.0,

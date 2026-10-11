@@ -28,8 +28,8 @@ survenue : quand une trame `$T` annonce un défaut, la coupure a déjà eu
 lieu côté matériel. L'ESP32 ne valide, ne recalcule ni n'acquitte rien —
 il relaie.
 
-Détail du protocole, des codes de défaut, et de chaque route HTTP :
-[`CLAUDE.md`](CLAUDE.md) et les documents sous [`doc/`](doc/).
+Détail du protocole, des codes de défaut, et de chaque route HTTP : voir
+la section Documentation plus bas.
 
 ## État réel du projet
 
@@ -55,8 +55,9 @@ Carte de puissance **V0.2**.
   par `VOUT`, jamais par `FAULT`) est en pratique la seule indication dont
   dispose l'opérateur après une coupure.
 
-Chantiers ouverts et détail complet de l'état matériel/logiciel :
-[`CLAUDE.md`](CLAUDE.md) § « État matériel actuel » et
+Chantiers ouverts côté ESP32 et liste de ce qui est déjà fait :
+[`doc/chantiers-ouverts.md`](doc/chantiers-ouverts.md). Détail de l'état
+matériel : [`CLAUDE.md`](CLAUDE.md) § « État matériel actuel » et
 [`doc/journal-20260819-mise-en-route-voset.md`](doc/journal-20260819-mise-en-route-voset.md).
 
 ## Compiler et flasher
@@ -82,12 +83,14 @@ Mode simulation sans TMS320 branché : `TMS_DUMMY_MODE` dans
 
 ## Documentation
 
-- [`CLAUDE.md`](CLAUDE.md) — contrat protocole complet, codes `FAULT`,
-  règles d'IHM, spécification de l'API HTTP, état matériel détaillé.
-- [`doc/esp32_agent.md`](doc/esp32_agent.md) et
-  [`doc/tms320_agent.md`](doc/tms320_agent.md) — contrat de part et
-  d'autre de la liaison UART ; à garder synchronisés avec le firmware
-  TMS320 quand celui-ci évolue.
+- [`CLAUDE.md`](CLAUDE.md) — règle de sécurité, état matériel, et
+  pointeurs vers les sources de vérité ci-dessous (ne recopie plus leur
+  contenu).
+- [`doc/esp32_agent.md`](doc/esp32_agent.md) — contrat côté ESP32 ; le
+  protocole complet, les codes `FAULT`, et l'API HTTP d'orchestration
+  vivent dans le skill `c2000:protocole-dualboost` d'`electronique-savoir`,
+  partagé avec le firmware TMS320 (à garder synchronisés quand l'un des
+  deux évolue).
 - [`doc/references.md`](doc/references.md) — références et liens de
   téléchargement des datasheets constructeur (non redistribuées ici, voir
   licence).
