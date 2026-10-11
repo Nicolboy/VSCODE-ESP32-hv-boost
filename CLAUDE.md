@@ -45,7 +45,7 @@ n'a jamais été mis sous tension. `VOSET=0` est la convention qui désactive
 l'étage 2 ; c'est l'état par défaut au démarrage du TMS320 et l'état dans
 lequel tourne la carte aujourd'hui.
 
-> État détaillé et historique de session : **`doc/PROMPT-session-esp32.md`**.
+> Historique de la mise en route de `VOSET` (résolue) : **`doc/journal-20260819-mise-en-route-voset.md`**.
 
 - Ne **jamais** envoyer un `VOSET` non nul tant que l'étage 2 n'est pas monté :
   la consigne serait acceptée, jamais atteinte, et la machine resterait bloquée

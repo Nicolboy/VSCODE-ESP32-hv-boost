@@ -57,7 +57,7 @@ Carte de puissance **V0.2**.
 
 Chantiers ouverts et détail complet de l'état matériel/logiciel :
 [`CLAUDE.md`](CLAUDE.md) § « État matériel actuel » et
-[`doc/PROMPT-session-esp32.md`](doc/PROMPT-session-esp32.md).
+[`doc/journal-20260819-mise-en-route-voset.md`](doc/journal-20260819-mise-en-route-voset.md).
 
 ## Compiler et flasher
 
